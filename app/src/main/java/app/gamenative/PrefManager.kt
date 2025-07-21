@@ -496,6 +496,13 @@ object PrefManager {
             setPref(OPEN_WEB_LINKS_EXTERNALLY, value)
         }
 
+    private val ITEMS_PER_PAGE = intPreferencesKey("items_per_page")
+    var itemsPerPage: Int
+        get() = getPref(ITEMS_PER_PAGE, 10)
+        set(value) {
+            setPref(ITEMS_PER_PAGE, value)
+        }
+
     // Whether to download games only over Wi-Fi.
     private val DOWNLOAD_ON_WIFI_ONLY = booleanPreferencesKey("download_on_wifi_only")
     var downloadOnWifiOnly: Boolean

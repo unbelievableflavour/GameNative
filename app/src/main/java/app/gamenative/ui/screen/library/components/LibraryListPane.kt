@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -45,8 +46,17 @@ import app.gamenative.service.SteamService
 import app.gamenative.ui.data.LibraryState
 import app.gamenative.ui.enums.AppFilter
 import app.gamenative.ui.internal.fakeAppInfo
+import app.gamenative.service.DownloadService
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.ui.component.topbar.AccountButton
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +66,7 @@ internal fun LibraryListPane(
     sheetState: SheetState,
     onFilterChanged: (AppFilter) -> Unit,
     onModalBottomSheet: (Boolean) -> Unit,
+    onPageChange: (Int) -> Unit,
     onIsSearching: (Boolean) -> Unit,
     onLogout: () -> Unit,
     onNavigate: (Int) -> Unit,
@@ -64,9 +75,7 @@ internal fun LibraryListPane(
 ) {
     val expandedFab by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
     val snackBarHost = remember { SnackbarHostState() }
-    val installedCount = remember(state.appInfoList) {
-        state.appInfoList.count { SteamService.isAppInstalled(it.appId) }
-    }
+    val installedCount = remember { DownloadService.getDownloadDirectoryApps().count() }
 
     // Determine the orientation to add additional scaffold padding.
     val configuration = LocalConfiguration.current
@@ -74,9 +83,22 @@ internal fun LibraryListPane(
         configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     }
 
+    // Infinite scroll: load next page when scrolled to bottom
+    LaunchedEffect(listState, state.appInfoList.size) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .filterNotNull()
+            .distinctUntilChanged()
+            .collect { lastVisibleIndex ->
+                if (lastVisibleIndex >= state.appInfoList.lastIndex
+                    && state.appInfoList.size < state.totalAppsInFilter) {
+                    onPageChange(1)
+                }
+            }
+    }
+
     Scaffold(
         modifier = if (isPortrait) Modifier else Modifier.statusBarsPadding(),
-        snackbarHost = { SnackbarHost(snackBarHost) },
+        snackbarHost = { SnackbarHost(snackBarHost) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -108,7 +130,7 @@ internal fun LibraryListPane(
                             )
                         )
                         Text(
-                            text = "${state.appInfoList.size} games • $installedCount installed",
+                            text = "${state.totalAppsInFilter} games • $installedCount installed",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -150,18 +172,40 @@ internal fun LibraryListPane(
             Box(
                 modifier = Modifier.fillMaxSize(),
             ) {
-                LibraryList(
-                    list = state.appInfoList,
-                    listState = listState,
-                    contentPaddingValues = PaddingValues(
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
                         start = 20.dp,
                         end = 20.dp,
                         bottom = 72.dp
                     ),
-                    onItemClick = onNavigate,
-                )
+                ) {
+                    items(items = state.appInfoList, key = { it.index }) { item ->
+                        AppItem(
+                            modifier = Modifier.animateItem(),
+                            appInfo = item,
+                            onClick = { onNavigate(item.appId) }
+                        )
+                        if (item.index < state.appInfoList.lastIndex) {
+                            HorizontalDivider()
+                        }
+                    }
+                    if (state.appInfoList.size < state.totalAppsInFilter) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+                }
 
-                // Filter FAB - Moved outside of Column scope
+                // Filter FAB - always show
                 if (!state.isSearching) {
                     ExtendedFloatingActionButton(
                         text = { Text(text = "Filters") },
@@ -199,7 +243,7 @@ internal fun LibraryListPane(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview(uiMode = Configuration.UI_MODE_NIGHT_YES or Configuration.UI_MODE_TYPE_NORMAL)
-@Preview
+@Preview(device = "spec:width=1920px,height=1080px,dpi=440") // Odin2 Mini
 @Composable
 private fun Preview_LibraryListPane() {
     val sheetState = rememberModalBottomSheetState()
@@ -225,6 +269,7 @@ private fun Preview_LibraryListPane() {
                 state = state,
                 sheetState = sheetState,
                 onFilterChanged = { },
+                onPageChange = { },
                 onModalBottomSheet = {
                     val currentState = state.modalBottomSheet
                     println("State: $currentState")

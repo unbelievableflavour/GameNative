@@ -278,11 +278,14 @@ class SteamService : Service(), IChallengeUrlChanged {
         private val depotManifestsPath: String
             get() = Paths.get(instance!!.dataDir.path, "Steam", "depot_manifests.zip").pathString
 
-        private val internalAppInstallPath: String
+        val internalAppInstallPath: String
             get() {
-                return Paths.get(instance!!.dataDir.path, "Steam", "steamapps", "common").pathString
+                if (instance != null) {
+                    return Paths.get(instance!!.dataDir.path, "Steam", "steamapps", "common").pathString
+                }
+                return ""
             }
-        private val externalAppInstallPath: String
+        val externalAppInstallPath: String
             get() {
                 return Paths.get(PrefManager.externalStoragePath, "Steam", "steamapps", "common").pathString
             }
@@ -298,7 +301,8 @@ class SteamService : Service(), IChallengeUrlChanged {
 
         val defaultAppInstallPath: String
             get() {
-                return if (PrefManager.useExternalStorage && File(externalAppInstallPath).exists()) {
+                return if (PrefManager.useExternalStorage && File(PrefManager.externalStoragePath).exists()) {
+                    // We still have an SD card file structure as expected
                     Timber.i("Using external storage")
                     Timber.i("install path for external storage is " + externalAppInstallPath)
                     externalAppInstallPath
@@ -443,11 +447,19 @@ class SteamService : Service(), IChallengeUrlChanged {
                 .associate { it.toPair() }
         }
 
-        fun getAppDirPath(appId: Int): String {
-            var appName = getAppInfoOf(appId)?.config?.installDir.orEmpty()
+        fun getAppDirName(app: SteamApp?): String {
+            // The folder name, if it got made
+            var appName = app?.config?.installDir.orEmpty()
             if (appName.isEmpty()) {
-                appName = getAppInfoOf(appId)?.name.orEmpty()
+                appName = app?.name.orEmpty()
             }
+            return appName
+        }
+
+        fun getAppDirPath(appId: Int): String {
+
+            val appName = getAppDirName(getAppInfoOf(appId))
+
             // Internal first (legacy installs), external second
             val internalPath = Paths.get(internalAppInstallPath, appName)
             if (Files.exists(internalPath)) return internalPath.pathString
@@ -456,7 +468,10 @@ class SteamService : Service(), IChallengeUrlChanged {
             if (Files.exists(externalPath)) return externalPath.pathString
 
             // Nothing on disk yet – default to whatever location you want new installs to use
-            return internalPath.pathString      // or externalPath.pathString
+            if (PrefManager.useExternalStorage) {
+                return externalPath.pathString
+            }
+            return internalPath.pathString
         }
 
         private fun isExecutable(flags: Any): Boolean = when (flags) {
@@ -1743,8 +1758,11 @@ class SteamService : Service(), IChallengeUrlChanged {
                 // request app pics data when needed
                 continuousPICSGetProductInfo()
 
-                // continuously check for game names that friends are playing.
-                continuousFriendChecker()
+                if (false) {
+                    // No social features are implemented at present
+                    // continuously check for game names that friends are playing.
+                    continuousFriendChecker()
+                }
 
                 // Tell steam we're online, this allows friends to update.
                 _steamFriends?.setPersonaState(PrefManager.personaState)
