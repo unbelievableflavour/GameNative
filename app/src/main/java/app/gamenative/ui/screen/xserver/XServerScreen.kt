@@ -104,6 +104,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.Arrays
 import kotlin.io.path.name
+import com.winlator.PrefManager as WinlatorPrefManager
 
 // TODO logs in composables are 'unstable' which can cause recomposition (performance issues)
 
@@ -839,9 +840,29 @@ private fun setupXEnvironment(
         envVars.put("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1")
     }
 
-    val enableWineDebug = true // preferences.getBoolean("enable_wine_debug", false)
-    val wineDebugChannels = PrefManager.getString("wine_debug_channels", Constants.XServer.DEFAULT_WINE_DEBUG_CHANNELS)
-    envVars.put("WINEDEBUG", if (enableWineDebug && !wineDebugChannels.isEmpty()) "+" + wineDebugChannels.replace(",", ",+") else "-all")
+    ProcessHelper.removeAllDebugCallbacks()
+    // read user preferences
+    val enableWineDebug = PrefManager.enableWineDebug
+    val enableBox86Logs = WinlatorPrefManager.getBoolean("enable_box86_64_logs", false)
+    val wineDebugChannels = PrefManager.wineDebugChannels
+    // explicitly enable or disable Wine debug channels
+    envVars.put(
+        "WINEDEBUG",
+        if (enableWineDebug && wineDebugChannels.isNotEmpty())
+            "+" + wineDebugChannels.replace(",", ",+")
+        else
+            "-all"
+    )
+    // capture debug output to file if either Wine or Box86/64 logging is enabled
+    if (enableWineDebug || enableBox86Logs) {
+        val wineLogDir = File(context.getExternalFilesDir(null), "wine_logs")
+        wineLogDir.mkdirs()
+        val logFile = File(wineLogDir, "wine_debug.log")
+        if (logFile.exists()) logFile.delete()
+        ProcessHelper.addDebugCallback { line ->
+            logFile.appendText(line + "\n")
+        }
+    }
 
     val rootPath = imageFs.getRootDir().getPath()
     FileUtils.clear(imageFs.getTmpDir())

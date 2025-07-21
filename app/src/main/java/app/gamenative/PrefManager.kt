@@ -17,6 +17,7 @@ import app.gamenative.enums.AppTheme
 import app.gamenative.ui.enums.AppFilter
 import app.gamenative.ui.enums.HomeDestination
 import app.gamenative.ui.enums.Orientation
+import app.gamenative.Constants
 import com.materialkolor.PaletteStyle
 import com.winlator.box86_64.Box86_64Preset
 import com.winlator.container.Container
@@ -525,4 +526,16 @@ object PrefManager {
         set(value) {
             setPref(EXTERNAL_STORAGE_PATH, value)
         }
+
+    // Add new setting for Wine debug logging
+    private val ENABLE_WINE_DEBUG = booleanPreferencesKey("enable_wine_debug")
+    var enableWineDebug: Boolean
+        get() = getPref(ENABLE_WINE_DEBUG, false)
+        set(value) = setPref(ENABLE_WINE_DEBUG, value)
+
+    // Add new setting for wine debug channels
+    private val WINE_DEBUG_CHANNELS = stringPreferencesKey("wine_debug_channels")
+    var wineDebugChannels: String
+        get() = getPref(WINE_DEBUG_CHANNELS, Constants.XServer.DEFAULT_WINE_DEBUG_CHANNELS)
+        set(value) = setPref(WINE_DEBUG_CHANNELS, value)
 }
