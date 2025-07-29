@@ -146,6 +146,7 @@ import java.lang.NullPointerException
 import java.util.concurrent.TimeUnit
 import android.os.Environment
 import android.os.SystemClock
+import kotlinx.coroutines.ensureActive
 import app.gamenative.enums.Marker
 import app.gamenative.utils.MarkerUtils
 
@@ -2078,6 +2079,13 @@ class SteamService : Service(), IChallengeUrlChanged {
             // Initial delay before each check
             delay(60.seconds)
 
+            PICSChangesCheck()
+        }
+    }
+    private fun PICSChangesCheck() {
+        scope.launch {
+            ensureActive()
+
             try {
                 val changesSince = _steamApps!!.picsGetChangesSince(
                     lastChangeNumber = PrefManager.lastPICSChangeNumber,
@@ -2087,7 +2095,7 @@ class SteamService : Service(), IChallengeUrlChanged {
 
                 if (PrefManager.lastPICSChangeNumber == changesSince.currentChangeNumber) {
                     Timber.w("Change number was the same as last change number, skipping")
-                    continue
+                    return@launch
                 }
 
                 // Set our last change number
@@ -2116,6 +2124,7 @@ class SteamService : Service(), IChallengeUrlChanged {
                         .map { PICSRequest(id = it.id) }
                         .chunked(MAX_PICS_BUFFER)
                         .forEach { chunk ->
+                            ensureActive()
                             Timber.d("onPicsChanges: Queueing ${chunk.size} app(s) for PICS")
                             appPicsChannel.send(chunk)
                         }
@@ -2136,6 +2145,8 @@ class SteamService : Service(), IChallengeUrlChanged {
                         val accessTokens = _steamApps?.picsGetAccessTokens(emptyList(), pkgsForAccessTokens)
                             ?.await()?.packageTokens ?: emptyMap()
 
+                        ensureActive()
+
                         pkgsWithChanges
                             .map { PICSRequest(it.id, accessTokens[it.id] ?: 0) }
                             .chunked(MAX_PICS_BUFFER)
@@ -2147,7 +2158,6 @@ class SteamService : Service(), IChallengeUrlChanged {
                 }
             } catch (e: NullPointerException) {
                 Timber.w("No lastPICSChangeNumber, skipping")
-                continue
             }
         }
     }
@@ -2208,7 +2218,10 @@ class SteamService : Service(), IChallengeUrlChanged {
                 .collect { appRequests ->
                     Timber.d("Processing ${appRequests.size} app PICS requests")
 
-                    val callback = _steamApps!!.picsGetProductInfo(
+                    ensureActive()
+                    val steamApps = instance?._steamApps ?: return@collect
+
+                    val callback = steamApps.picsGetProductInfo(
                         apps = appRequests,
                         packages = emptyList(),
                     ).await()
@@ -2220,7 +2233,8 @@ class SteamService : Service(), IChallengeUrlChanged {
                                     "\n\tReceived PICS result of ${picsCallback.packages.size} package(s).",
                         )
 
-                        val steamApps = picsCallback.apps.values.mapNotNull { app ->
+                        ensureActive()
+                        val steamAppsMap = picsCallback.apps.values.mapNotNull { app ->
                             val appFromDb = appDao.findApp(app.id)
                             val packageId = appFromDb?.packageId ?: INVALID_PKG_ID
                             val packageFromDb = if (packageId != INVALID_PKG_ID) licenseDao.findLicense(packageId) else null
@@ -2244,10 +2258,10 @@ class SteamService : Service(), IChallengeUrlChanged {
                             }
                         }
 
-                        if (steamApps.isNotEmpty()) {
-                            Timber.i("Inserting ${steamApps.size} PICS apps to database")
+                        if (steamAppsMap.isNotEmpty()) {
+                            Timber.i("Inserting ${steamAppsMap.size} PICS apps to database")
                             db.withTransaction {
-                                appDao.insertAll(steamApps)
+                                appDao.insertAll(steamAppsMap)
                             }
                         }
                     }
@@ -2261,7 +2275,9 @@ class SteamService : Service(), IChallengeUrlChanged {
                 .collect { packageRequests ->
                     Timber.d("Processing ${packageRequests.size} package PICS requests")
 
-                    val callback = _steamApps!!.picsGetProductInfo(
+                    ensureActive()
+                    val steamApps = instance?._steamApps ?: return@collect
+                    val callback = steamApps.picsGetProductInfo(
                         apps = emptyList(),
                         packages = packageRequests,
                     ).await()
@@ -2294,7 +2310,7 @@ class SteamService : Service(), IChallengeUrlChanged {
                         }
 
                         // TODO: This could be an issue. (Stalling)
-                        _steamApps!!.picsGetAccessTokens(
+                        steamApps.picsGetAccessTokens(
                             appIds = queue,
                             packageIds = emptyList(),
                         ).await()

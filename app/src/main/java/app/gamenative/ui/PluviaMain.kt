@@ -15,9 +15,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -192,15 +194,17 @@ fun PluviaMain(
         }
     }
 
-    LaunchedEffect(lifecycleOwner) {
-        if (!state.isSteamConnected && !isConnecting) {
-            isConnecting = true
-            val intent = Intent(context, SteamService::class.java)
-            context.startForegroundService(intent)
-        }
-        // Go to the Home screen if we're already logged in.
-        if (SteamService.isLoggedIn && state.currentScreen == PluviaScreen.LoginUser) {
-            navController.navigate(PluviaScreen.Home.route)
+    LaunchedEffect(Unit) {
+        //
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (!state.isSteamConnected && !isConnecting) {
+                Timber.d("Steam not connected - attempt")
+                isConnecting = true
+                context.startForegroundService(Intent(context, SteamService::class.java))
+            }
+            if (SteamService.isLoggedIn && state.currentScreen == PluviaScreen.LoginUser) {
+                navController.navigate(PluviaScreen.Home.route)
+            }
         }
     }
 
