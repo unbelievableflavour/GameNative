@@ -25,6 +25,8 @@ enum class DialogType(val icon: ImageVector? = null) {
     DELETE_APP,
     INSTALL_IMAGEFS,
 
+    SAVE_CONTAINER_CONFIG,
+
     NONE,
 
     FRIEND_BLOCK(Icons.Default.Block),

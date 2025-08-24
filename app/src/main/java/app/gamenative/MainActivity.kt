@@ -2,6 +2,7 @@ package app.gamenative
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color.TRANSPARENT
 import android.os.Build
@@ -16,6 +17,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,10 +34,12 @@ import app.gamenative.ui.PluviaMain
 import app.gamenative.ui.enums.Orientation
 import app.gamenative.utils.AnimatedPngDecoder
 import app.gamenative.utils.IconDecoder
+import app.gamenative.utils.IntentLaunchManager
 import com.posthog.PostHog
 import com.skydoves.landscapist.coil.LocalCoilImageLoader
 import com.winlator.core.AppUtils
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import java.util.EnumSet
 import kotlin.math.abs
 import okio.Path.Companion.toOkioPath
@@ -49,6 +53,26 @@ class MainActivity : ComponentActivity() {
 
         private var currentOrientationChangeValue: Int = 0
         private var availableOrientations: EnumSet<Orientation> = EnumSet.of(Orientation.UNSPECIFIED)
+
+        // Store pending launch request to be processed after UI is ready
+        @Volatile
+        private var pendingLaunchRequest: IntentLaunchManager.LaunchRequest? = null
+
+        // Atomically get and clear the pending launch request
+        fun consumePendingLaunchRequest(): IntentLaunchManager.LaunchRequest? {
+            synchronized(this) {
+                val request = pendingLaunchRequest
+                pendingLaunchRequest = null
+                return request
+            }
+        }
+
+        // Atomically set a new pending launch request
+        fun setPendingLaunchRequest(request: IntentLaunchManager.LaunchRequest) {
+            synchronized(this) {
+                pendingLaunchRequest = request
+            }
+        }
     }
 
     private val onSetSystemUi: (AndroidEvent.SetSystemUIVisibility) -> Unit = {
@@ -79,9 +103,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(30, 30, 30)),
-            navigationBarStyle = SystemBarStyle.light(TRANSPARENT, TRANSPARENT)
+            navigationBarStyle = SystemBarStyle.light(TRANSPARENT, TRANSPARENT),
         )
         super.onCreate(savedInstanceState)
+
+        handleLaunchIntent(intent)
 
         // Prevent device from sleeping while app is open
         AppUtils.keepScreenOn(this)
@@ -139,6 +165,42 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLaunchIntent(intent)
+    }
+    private fun handleLaunchIntent(intent: Intent) {
+        Timber.d("[MainActivity]: handleLaunchIntent called with action=${intent.action}")
+        try {
+            val launchRequest = IntentLaunchManager.parseLaunchIntent(intent)
+            if (launchRequest != null) {
+                Timber.d("[MainActivity]: Received external launch intent for app ${launchRequest.appId}")
+
+                // If already logged in, emit event immediately
+                // Otherwise store for processing after login
+                if (SteamService.isLoggedIn) {
+                    Timber.d("[MainActivity]: User already logged in, emitting ExternalGameLaunch event immediately")
+                    lifecycleScope.launch {
+                        PluviaApp.events.emit(AndroidEvent.ExternalGameLaunch(launchRequest.appId))
+                    }
+
+                    // Apply config override if present
+                    launchRequest.containerConfig?.let { config ->
+                        IntentLaunchManager.applyTemporaryConfigOverride(this, launchRequest.appId, config)
+                    }
+                } else {
+                    // Store the launch request to be processed after login
+                    setPendingLaunchRequest(launchRequest)
+                    Timber.d("[MainActivity]: User not logged in, stored pending launch request for app ${launchRequest.appId}")
+                }
+            } else {
+                Timber.d("[MainActivity]: parseLaunchIntent returned null")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "[MainActivity]: Failed to handle launch intent")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
 
@@ -184,7 +246,11 @@ class MainActivity : ComponentActivity() {
         SteamService.autoStopWhenIdle = true
 
         // stop SteamService only if no downloads or sync are in progress
-        if (!isChangingConfigurations && SteamService.isConnected && !SteamService.hasActiveOperations() && !SteamService.isLoginInProgress) {
+        if (!isChangingConfigurations &&
+            SteamService.isConnected &&
+            !SteamService.hasActiveOperations() &&
+            !SteamService.isLoginInProgress
+        ) {
             Timber.i("Stopping SteamService - no active operations")
             SteamService.stop()
         }
