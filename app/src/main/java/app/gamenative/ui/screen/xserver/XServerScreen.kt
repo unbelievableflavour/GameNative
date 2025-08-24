@@ -230,13 +230,14 @@ fun XServerScreen(
 
                             anchor.post {
                                 if (anchor.windowToken == null) return@post
-                                if (Build.VERSION.SDK_INT >= 30 && c != null) {
+                                val show = {
                                     PostHog.capture(event = "onscreen_keyboard_enabled")
-                                    c.show(WindowInsets.Type.ime())
+                                    imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+                                }
+                                if (Build.VERSION.SDK_INT > 29 && c != null) {
+                                    anchor.postDelayed({ show() }, 500)  // Pixel/Android-12+ quirk
                                 } else {
-                                    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                                    PostHog.capture(event = "onscreen_keyboard_enabled")
-                                    imm.showSoftInput(anchor, InputMethodManager.SHOW_IMPLICIT)
+                                    show()
                                 }
                             }
                         }
