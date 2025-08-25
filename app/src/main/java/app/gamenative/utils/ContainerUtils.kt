@@ -1,6 +1,7 @@
 package app.gamenative.utils
 
 import android.content.Context
+import app.gamenative.enums.Marker
 import app.gamenative.PrefManager
 import app.gamenative.service.SteamService
 import com.winlator.container.Container
@@ -61,6 +62,7 @@ object ContainerUtils {
             box86Preset = PrefManager.box86Preset,
             box64Preset = PrefManager.box64Preset,
             desktopTheme = WineThemeManager.DEFAULT_DESKTOP_THEME,
+            language = PrefManager.containerLanguage,
 
             csmt = PrefManager.csmt,
             videoPciDeviceID = PrefManager.videoPciDeviceID,
@@ -101,6 +103,7 @@ object ContainerUtils {
         PrefManager.videoMemorySize = containerData.videoMemorySize
         PrefManager.mouseWarpOverride = containerData.mouseWarpOverride
         PrefManager.disableMouseInput = containerData.disableMouseInput
+        PrefManager.containerLanguage = containerData.language
     }
 
     fun toContainerData(container: Container): ContainerData {
@@ -166,6 +169,7 @@ object ContainerUtils {
             box86Preset = container.box86Preset,
             box64Preset = container.box64Preset,
             desktopTheme = container.desktopTheme,
+            language = try { container.language } catch (e: Exception) { container.getExtra("language", "english") },
             sdlControllerAPI = container.isSdlControllerAPI,
             enableXInput = enableX,
             enableDInput = enableD,
@@ -196,6 +200,12 @@ object ContainerUtils {
 
     fun applyToContainer(context: Context, container: Container, containerData: ContainerData, saveToDisk: Boolean) {
         Timber.d("Applying containerData to container. execArgs: '${containerData.execArgs}', saveToDisk: $saveToDisk")
+        // Detect language change before mutating container
+        val previousLanguage: String = try {
+            container.language
+        } catch (e: Exception) {
+            container.getExtra("language", "english")
+        }
         val userRegFile = File(container.rootDir, ".wine/user.reg")
         WineRegistryEditor(userRegFile).use { registryEditor ->
             registryEditor.setDwordValue("Software\\Wine\\Direct3D", "csmt", if (containerData.csmt) 3 else 0)
@@ -242,6 +252,16 @@ object ContainerUtils {
         container.desktopTheme = containerData.desktopTheme
         container.graphicsDriverVersion = containerData.graphicsDriverVersion
         container.setDisableMouseInput(containerData.disableMouseInput)
+        try { container.language = containerData.language } catch (e: Exception) { container.putExtra("language", containerData.language) }
+        // Set container LC_ALL according to selected language
+        val lcAll = mapLanguageToLocale(containerData.language)
+        container.setLC_ALL(lcAll)
+        // If language changed, remove the STEAM_DLL_REPLACED marker so settings regenerate
+        if (previousLanguage.lowercase() != containerData.language.lowercase()) {
+            val appDirPath = SteamService.getAppDirPath(container.id)
+            MarkerUtils.removeMarker(appDirPath, Marker.STEAM_DLL_REPLACED)
+            Timber.i("Language changed from '$previousLanguage' to '${containerData.language}'. Cleared STEAM_DLL_REPLACED marker for container ${container.id}.")
+        }
 
         // Apply controller settings to container
         val api = when {
@@ -258,6 +278,41 @@ object ContainerUtils {
             container.saveData()
         }
         Timber.d("Set container.execArgs to '${containerData.execArgs}'")
+    }
+
+    private fun mapLanguageToLocale(language: String): String {
+        return when (language.lowercase()) {
+            "arabic" -> "ar_SA.utf8"
+            "bulgarian" -> "bg_BG.utf8"
+            "schinese" -> "zh_CN.utf8"
+            "tchinese" -> "zh_TW.utf8"
+            "czech" -> "cs_CZ.utf8"
+            "danish" -> "da_DK.utf8"
+            "dutch" -> "nl_NL.utf8"
+            "english" -> "en_US.utf8"
+            "finnish" -> "fi_FI.utf8"
+            "french" -> "fr_FR.utf8"
+            "german" -> "de_DE.utf8"
+            "greek" -> "el_GR.utf8"
+            "hungarian" -> "hu_HU.utf8"
+            "italian" -> "it_IT.utf8"
+            "japanese" -> "ja_JP.utf8"
+            "koreana" -> "ko_KR.utf8"
+            "norwegian" -> "nb_NO.utf8"
+            "polish" -> "pl_PL.utf8"
+            "portuguese" -> "pt_PT.utf8"
+            "brazilian" -> "pt_BR.utf8"
+            "romanian" -> "ro_RO.utf8"
+            "russian" -> "ru_RU.utf8"
+            "spanish" -> "es_ES.utf8"
+            "latam" -> "es_MX.utf8"
+            "swedish" -> "sv_SE.utf8"
+            "thai" -> "th_TH.utf8"
+            "turkish" -> "tr_TR.utf8"
+            "ukrainian" -> "uk_UA.utf8"
+            "vietnamese" -> "vi_VN.utf8"
+            else -> "en_US.utf8"
+        }
     }
 
     fun getContainerId(appId: Int): Int {
@@ -331,6 +386,7 @@ object ContainerUtils {
                 box86Preset = PrefManager.box86Preset,
                 box64Preset = PrefManager.box64Preset,
                 desktopTheme = WineThemeManager.DEFAULT_DESKTOP_THEME,
+                language = PrefManager.containerLanguage,
 
                 csmt = PrefManager.csmt,
                 videoPciDeviceID = PrefManager.videoPciDeviceID,

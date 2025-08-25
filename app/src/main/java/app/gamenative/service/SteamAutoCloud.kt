@@ -185,9 +185,10 @@ object SteamAutoCloud {
             }
 
         val getLocalUserFilesAsPrefixMap: () -> Map<String, List<UserFileInfo>> = {
-            appInfo.ufs.saveFilePatterns
-                .filter { userFile -> userFile.root.isWindows }
-                .associate { userFile ->
+            val savePatterns = appInfo.ufs.saveFilePatterns.filter { userFile -> userFile.root.isWindows }
+
+            if (savePatterns.isNotEmpty()) {
+                savePatterns.associate { userFile ->
                     val basePath = Paths.get(prefixToPath(userFile.root.toString()), userFile.path)
 
                     Timber.i("Looking for saves in $basePath with pattern ${userFile.pattern} (prefix ${userFile.prefix})")
@@ -210,6 +211,32 @@ object SteamAutoCloud {
 
                     Paths.get(userFile.prefix).pathString to files
                 }
+            } else {
+                // Fallback: no UFS patterns; scan SteamUserData root recursively (depth 5)
+                val rootType = PathType.SteamUserData
+                val basePath = Paths.get(prefixToPath(rootType.toString()))
+
+                Timber.i("No UFS patterns; scanning $basePath recursively (depth 5) under ${rootType.name}")
+
+                val files = FileUtils.findFilesRecursive(
+                    rootPath = basePath,
+                    pattern = "*",
+                    maxDepth = 5,
+                ).map {
+                    val sha = CryptoHelper.shaHash(Files.readAllBytes(it))
+
+                    val relativePath = basePath.relativize(it).pathString
+
+                    Timber.i("Found ${it.pathString}\n\tin %${rootType.name}%\n\twith sha [${sha.joinToString(", ")}]")
+
+                    // Store relative path in filename; empty path component
+                    UserFileInfo(rootType, "", relativePath, Files.getLastModifiedTime(it).toMillis(), sha)
+                }.collect(Collectors.toList())
+
+                Timber.i("Found ${files.size} file(s) in $basePath for fallback recursive scan")
+
+                mapOf(Paths.get("%${rootType.name}%").pathString to files)
+            }
         }
 
         val fileChangeListToUserFiles: (AppFileChangeList) -> List<UserFileInfo> = { appFileListChange ->
@@ -681,8 +708,8 @@ object SteamAutoCloud {
 
                             SaveLocation.None -> {
                                 syncResult = SyncResult.Conflict
-                                remoteTimestamp = appFileListChange.files.map { it.timestamp.time }.max()
-                                localTimestamp = allLocalUserFiles.map { it.timestamp }.max()
+                                remoteTimestamp = appFileListChange.files.map { it.timestamp.time }.maxOrNull() ?: 0L
+                                localTimestamp = allLocalUserFiles.map { it.timestamp }.maxOrNull() ?: 0L
                             }
                         }
                     }

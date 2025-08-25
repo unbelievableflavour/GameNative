@@ -77,6 +77,7 @@ import com.winlator.core.envvars.EnvVarInfo
 import com.winlator.core.envvars.EnvVars
 import com.winlator.core.envvars.EnvVarSelectionType
 import com.winlator.core.DefaultVersion
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,6 +113,37 @@ fun ContainerConfigDialog(
         val virglVersions = stringArrayResource(R.array.virgl_version_entries).toList()
         val zinkVersions = stringArrayResource(R.array.zink_version_entries).toList()
         val vortekVersions = stringArrayResource(R.array.vortek_version_entries).toList()
+        val languages = listOf(
+            "arabic",
+            "bulgarian",
+            "schinese",
+            "tchinese",
+            "czech",
+            "danish",
+            "dutch",
+            "english",
+            "finnish",
+            "french",
+            "german",
+            "greek",
+            "hungarian",
+            "italian",
+            "japanese",
+            "koreana",
+            "norwegian",
+            "polish",
+            "portuguese",
+            "brazilian",
+            "romanian",
+            "russian",
+            "spanish",
+            "latam",
+            "swedish",
+            "thai",
+            "turkish",
+            "ukrainian",
+            "vietnamese",
+        )
 
         var screenSizeIndex by rememberSaveable {
             val searchIndex = screenSizes.indexOfFirst { it.contains(config.screenSize) }
@@ -208,6 +240,10 @@ fun ContainerConfigDialog(
         var mouseWarpIndex by rememberSaveable {
             val index = mouseWarps.indexOfFirst { it.lowercase() == config.mouseWarpOverride }
             mutableIntStateOf(if (index >= 0) index else 0)
+        }
+        var languageIndex by rememberSaveable {
+            val idx = languages.indexOfFirst { it == config.language.lowercase() }
+            mutableIntStateOf(if (idx >= 0) idx else languages.indexOf("english"))
         }
 
         var dismissDialogState by rememberSaveable(stateSaver = MessageDialogState.Saver) {
@@ -418,6 +454,28 @@ fun ContainerConfigDialog(
                                 onValueChange = { config = config.copy(execArgs = it) },
                                 label = { Text(text = "Exec Arguments") },
                                 placeholder = { Text(text = "Example: -dx11") },
+                            )
+                            val displayNameForLanguage: (String) -> String = { code ->
+                                when (code) {
+                                    "schinese" -> "Simplified Chinese"
+                                    "tchinese" -> "Traditional Chinese"
+                                    "koreana" -> "Korean"
+                                    "latam" -> "Spanish (Latin America)"
+                                    "brazilian" -> "Portuguese (Brazil)"
+                                    else -> code.replaceFirstChar { ch -> ch.titlecase(Locale.getDefault()) }
+                                }
+                            }
+                            SettingsListDropdown(
+                                enabled = true,
+                                value = languageIndex,
+                                items = languages.map(displayNameForLanguage),
+                                fallbackDisplay = displayNameForLanguage("english"),
+                                onItemSelected = { index ->
+                                    languageIndex = index
+                                    config = config.copy(language = languages[index])
+                                },
+                                title = { Text(text = "Language") },
+                                colors = settingsTileColors(),
                             )
                             SettingsListDropdown(
                                 colors = settingsTileColors(),

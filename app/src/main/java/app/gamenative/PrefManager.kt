@@ -226,6 +226,13 @@ object PrefManager {
             setPref(STARTUP_SELECTION, value)
         }
 
+    private val CONTAINER_LANGUAGE = stringPreferencesKey("container_language")
+    var containerLanguage: String
+        get() = getPref(CONTAINER_LANGUAGE, "english")
+        set(value) {
+            setPref(CONTAINER_LANGUAGE, value)
+        }
+
     private val BOX86_PRESET = stringPreferencesKey("box86_preset")
     var box86Preset: String
         get() = getPref(BOX86_PRESET, Box86_64Preset.COMPATIBILITY)

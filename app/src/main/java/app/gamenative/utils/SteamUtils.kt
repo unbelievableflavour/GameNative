@@ -154,7 +154,7 @@ object SteamUtils {
                 }
                 Timber.i("Replaced steam_api.dll")
                 replaced32 = true
-                ensureSteamSettings(it, appId)
+                ensureSteamSettings(context, it, appId)
             }
             if (it.name == "steam_api64.dll" && it.exists()) {
                 Timber.i("Found steam_api64.dll at ${it.absolutePathString()}, replacing...")
@@ -169,7 +169,7 @@ object SteamUtils {
                 }
                 Timber.i("Replaced steam_api64.dll")
                 replaced64 = true
-                ensureSteamSettings(it, appId)
+                ensureSteamSettings(context, it, appId)
             }
         }
         Timber.i("Finished replaceSteamApi for appId: $appId. Replaced 32bit: $replaced32, Replaced 64bit: $replaced64")
@@ -609,7 +609,7 @@ object SteamUtils {
     /**
      * Sibling folder “steam_settings” + empty “offline.txt” file, no-ops if they already exist.
      */
-    private fun ensureSteamSettings(dllPath: Path, appId: Int) {
+    private fun ensureSteamSettings(context: Context, dllPath: Path, appId: Int) {
         val appIdFileUpper = dllPath.parent.resolve("steam_appid.txt")
         if (Files.notExists(appIdFileUpper)) {
             Files.createFile(appIdFileUpper)
@@ -637,6 +637,111 @@ object SteamUtils {
             Files.createFile(steamIdFile)
             steamIdFile.toFile().writeText(SteamService.userSteamId?.convertToUInt64().toString())
         }
+        // Write Goldberg language override file based on container setting (default to english)
+        val forceLanguageFile = settingsDir.resolve("force_language.txt")
+        if (Files.notExists(forceLanguageFile)) {
+            Files.createFile(forceLanguageFile)
+        }
+        try {
+            val container = ContainerUtils.getOrCreateContainer(context, appId)
+            val language = (container.getExtra("language", null) ?: run {
+                try {
+                    // Prefer Container API if available
+                    val method = container.javaClass.getMethod("getLanguage")
+                    (method.invoke(container) as? String) ?: "english"
+                } catch (e: Exception) { "english" }
+            })
+            forceLanguageFile.toFile().writeText((language ?: "english").lowercase())
+        } catch (e: Exception) {
+            // Fallback to english if container retrieval fails
+            forceLanguageFile.toFile().writeText("english")
+        }
+
+        // Write Goldberg force account name override
+        val forceAccountNameFile = settingsDir.resolve("force_account_name.txt")
+        if (Files.notExists(forceAccountNameFile)) {
+            Files.createFile(forceAccountNameFile)
+        }
+        try {
+            val accountName = PrefManager.username
+            forceAccountNameFile.toFile().writeText(accountName)
+        } catch (e: Exception) {
+            // Leave file as empty if something goes wrong
+        }
+
+        // Write supported languages list
+        val supportedLanguagesFile = settingsDir.resolve("supported_languages.txt")
+        if (Files.notExists(supportedLanguagesFile)) {
+            Files.createFile(supportedLanguagesFile)
+        }
+        val supportedLanguages = listOf(
+            "arabic",
+            "bulgarian",
+            "schinese",
+            "tchinese",
+            "czech",
+            "danish",
+            "dutch",
+            "english",
+            "finnish",
+            "french",
+            "german",
+            "greek",
+            "hungarian",
+            "italian",
+            "japanese",
+            "koreana",
+            "norwegian",
+            "polish",
+            "portuguese",
+            "brazilian",
+            "romanian",
+            "russian",
+            "spanish",
+            "latam",
+            "swedish",
+            "thai",
+            "turkish",
+            "ukrainian",
+            "vietnamese",
+        )
+        supportedLanguagesFile.toFile().writeText(supportedLanguages.joinToString("\n"))
+
+        // Write local save path file only if no UFS is defined; always use SteamUserData in that case
+        run {
+            try {
+                val appInfo = SteamService.getAppInfoOf(appId)
+                val hasUfs = appInfo?.ufs?.saveFilePatterns?.any { it.root.isWindows } == true
+                if (!hasUfs) {
+                    val localSaveFile = settingsDir.resolve("local_save.txt")
+                    if (Files.notExists(localSaveFile)) {
+                        Files.createFile(localSaveFile)
+                    }
+                    val accountId = SteamService.userSteamId?.accountID?.toLong() ?: 0L
+                    val steamUserDataPath = app.gamenative.enums.PathType.SteamUserData.toAbsPath(context, appId, accountId)
+                    localSaveFile.toFile().writeText(convertToWindowsPath(steamUserDataPath))
+                }
+            } catch (_: Exception) {
+                // Ignore; do not create file if we cannot determine UFS presence
+            }
+        }
+    }
+
+    private fun convertToWindowsPath(unixPath: String): String {
+        // Find the drive_c component and convert everything after to Windows semantics
+        val marker = "/drive_c/"
+        val idx = unixPath.indexOf(marker)
+        val tail = if (idx >= 0) {
+            unixPath.substring(idx + marker.length)
+        } else if (unixPath.contains("drive_c/")) {
+            val i = unixPath.indexOf("drive_c/")
+            unixPath.substring(i + "drive_c/".length)
+        } else {
+            // Fallback: best-effort replacement of leading wineprefix
+            unixPath
+        }
+        val windowsTail = tail.replace('/', '\\')
+        return "C:" + if (windowsTail.startsWith("\\")) windowsTail else "\\" + windowsTail
     }
 
     /**

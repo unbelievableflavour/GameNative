@@ -80,6 +80,9 @@ public class Container {
     private String executablePath = ""; // Executable path for container
     private boolean sdlControllerAPI;
 
+    // Preferred game language for Goldberg force_language.txt
+    private String language = "english";
+
     private ContainerManager containerManager;
 
     private byte dinputMapperType = 1;  // 1=standard, 2=XInput mapper
@@ -263,6 +266,14 @@ public class Container {
 
     public void setSdlControllerAPI(boolean sdlControllerAPI) {
         this.sdlControllerAPI = sdlControllerAPI;
+    }
+
+    public String getLanguage() {
+        return language != null ? language : "english";
+    }
+
+    public void setLanguage(String language) {
+        this.language = (language != null && !language.isEmpty()) ? language : "english";
     }
 
     public boolean isWoW64Mode() {
@@ -528,6 +539,7 @@ public class Container {
             data.put("disableMouseInput", disableMouseInput);
             data.put("installPath", installPath);
             data.put("steamType", steamType);
+            data.put("language", language);
 
             if (!WineInfo.isMainWineVersion(wineVersion)) data.put("wineVersion", wineVersion);
             FileUtils.writeString(getConfigFile(), data.toString());
@@ -587,6 +599,9 @@ public class Container {
                     break;
                 case "steamType" :
                     setSteamType(data.getString(key));
+                    break;
+                case "language" :
+                    setLanguage(data.getString(key));
                     break;
                 case "inputType" :
                     setInputType(data.getInt(key));

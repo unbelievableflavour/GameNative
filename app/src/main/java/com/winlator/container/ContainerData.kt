@@ -50,6 +50,8 @@ data class ContainerData(
     val dinputMapperType: Byte = 1,
     /** Disable external mouse input **/
     val disableMouseInput: Boolean = false,
+    /** Preferred game language (Goldberg) **/
+    val language: String = "english",
 ) {
     companion object {
         val Saver = mapSaver(
@@ -85,6 +87,7 @@ data class ContainerData(
                     "enableDInput" to state.enableDInput,
                     "dinputMapperType" to state.dinputMapperType,
                     "disableMouseInput" to state.disableMouseInput,
+                    "language" to state.language,
                 )
             },
             restore = { savedMap ->
@@ -119,6 +122,7 @@ data class ContainerData(
                     enableDInput = savedMap["enableDInput"] as Boolean,
                     dinputMapperType = savedMap["dinputMapperType"] as Byte,
                     disableMouseInput = savedMap["disableMouseInput"] as Boolean,
+                    language = (savedMap["language"] as? String) ?: "english",
                 )
             },
         )
