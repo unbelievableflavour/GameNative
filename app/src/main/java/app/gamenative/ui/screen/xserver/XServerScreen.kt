@@ -663,6 +663,7 @@ fun XServerScreen(
                     val profiles2 = PluviaApp.inputControlsManager?.getProfiles(false) ?: listOf()
                     if (profiles2.size > 2) {
                         showInputControls(profiles2[2])
+                        areControlsVisible = true
                     }
                 }
             }
