@@ -35,6 +35,7 @@ import app.gamenative.PrefManager
 import app.gamenative.data.LibraryItem
 import app.gamenative.service.SteamService
 import app.gamenative.ui.data.LibraryState
+import app.gamenative.data.GameSource
 import app.gamenative.ui.enums.AppFilter
 import app.gamenative.ui.enums.Orientation
 import app.gamenative.events.AndroidEvent
@@ -87,9 +88,9 @@ private fun LibraryScreenContent(
     onNavigateRoute: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
-    var selectedAppId by remember { mutableStateOf<Int?>(null) }
+    var selectedGame by remember { mutableStateOf<LibraryItem?>(null) }
 
-    BackHandler(selectedAppId != null) { selectedAppId = null }
+    BackHandler(selectedGame != null) { selectedGame = null }
     val safePaddingModifier =
         if (LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT)
             Modifier.displayCutoutPadding()
@@ -99,7 +100,7 @@ private fun LibraryScreenContent(
     Box(
         Modifier.background(MaterialTheme.colorScheme.background)
         .then(safePaddingModifier)) {
-        if (selectedAppId == null) {
+        if (selectedGame == null) {
             LibraryListPane(
                 state = state,
                 listState = listState,
@@ -111,13 +112,16 @@ private fun LibraryScreenContent(
                 onSearchQuery = onSearchQuery,
                 onNavigateRoute = onNavigateRoute,
                 onLogout = onLogout,
-                onNavigate = { appId -> selectedAppId = appId }
+                onNavigate = { libraryItem -> 
+                    // Set the selected game for both Steam and GOG
+                    selectedGame = libraryItem
+                }
             )
         } else {
             LibraryDetailPane(
-                appId = selectedAppId ?: SteamService.INVALID_APP_ID,
-                onBack = { selectedAppId = null },
-                onClickPlay = { onClickPlay(selectedAppId!!, it) },
+                game = selectedGame!!,
+                onBack = { selectedGame = null },
+                onClickPlay = { onClickPlay(selectedGame!!.appId, it) },
             )
         }
     }

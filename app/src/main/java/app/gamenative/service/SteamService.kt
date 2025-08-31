@@ -268,6 +268,10 @@ class SteamService : Service(), IChallengeUrlChanged {
             private set
         val isLoggedIn: Boolean
             get() = instance?.steamClient?.steamID?.isValid == true
+            
+        fun hasStoredCredentials(): Boolean {
+            return PrefManager.username.isNotEmpty() && PrefManager.refreshToken.isNotEmpty()
+        }
         var isWaitingForQRAuth: Boolean = false
             private set
 

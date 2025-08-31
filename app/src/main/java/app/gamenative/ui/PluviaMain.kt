@@ -52,6 +52,7 @@ import app.gamenative.ui.model.MainViewModel
 import app.gamenative.ui.screen.HomeScreen
 import app.gamenative.ui.screen.PluviaScreen
 import app.gamenative.ui.screen.chat.ChatScreen
+import app.gamenative.ui.screen.accounts.AccountManagementScreen
 import app.gamenative.ui.screen.login.UserLoginScreen
 import app.gamenative.ui.screen.settings.SettingsScreen
 import app.gamenative.ui.screen.xserver.XServerScreen
@@ -282,8 +283,9 @@ fun PluviaMain(
 
     LaunchedEffect(Unit) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            if (!state.isSteamConnected && !isConnecting) {
-                Timber.d("[PluviaMain]: Steam not connected - attempt")
+            // Only auto-connect to Steam if user has previously logged in
+            if (!state.isSteamConnected && !isConnecting && SteamService.hasStoredCredentials()) {
+                Timber.d("[PluviaMain]: Steam not connected but has stored credentials - attempting auto-connect")
                 isConnecting = true
                 context.startForegroundService(Intent(context, SteamService::class.java))
             }
@@ -588,12 +590,17 @@ fun PluviaMain(
 
         NavHost(
             navController = navController,
-            startDestination = PluviaScreen.LoginUser.route,
+            startDestination = PluviaScreen.Home.route,
         ) {
             /** Login **/
             /** Login **/
             composable(route = PluviaScreen.LoginUser.route) {
                 UserLoginScreen()
+            }
+            
+            /** Account Management **/
+            composable(route = PluviaScreen.AccountManagement.route) {
+                AccountManagementScreen(navController = navController)
             }
             /** Library, Downloads, Friends **/
             /** Library, Downloads, Friends **/

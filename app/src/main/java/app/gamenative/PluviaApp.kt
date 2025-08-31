@@ -3,6 +3,7 @@ package app.gamenative
 import android.os.StrictMode
 import androidx.navigation.NavController
 import app.gamenative.events.EventDispatcher
+import app.gamenative.service.GOG.GOGServiceChaquopy
 import app.gamenative.utils.IntentLaunchManager
 import com.google.android.play.core.splitcompat.SplitCompatApplication
 import com.winlator.inputcontrols.InputControlsManager
@@ -59,6 +60,14 @@ class PluviaApp : SplitCompatApplication() {
             host = BuildConfig.POSTHOG_HOST,
         )
         PostHogAndroid.setup(this, postHogConfig)
+
+        // Initialize GOG Service
+        try {
+            GOGServiceChaquopy.initialize(this)
+            Timber.i("[PluviaApp]: GOG Service initialized successfully")
+        } catch (e: Exception) {
+            Timber.e(e, "[PluviaApp]: Failed to initialize GOG Service")
+        }
     }
 
     companion object {

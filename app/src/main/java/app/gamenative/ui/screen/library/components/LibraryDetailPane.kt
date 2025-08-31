@@ -9,6 +9,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import app.gamenative.PrefManager
+import app.gamenative.data.GameSource
+import app.gamenative.data.LibraryItem
 import app.gamenative.service.SteamService
 import app.gamenative.ui.data.LibraryState
 import app.gamenative.ui.enums.AppFilter
@@ -19,12 +21,12 @@ import java.util.EnumSet
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun LibraryDetailPane(
-    appId: Int,
+    game: LibraryItem,
     onClickPlay: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     Surface {
-        if (appId == SteamService.INVALID_APP_ID) {
+        if (game.appId == SteamService.INVALID_APP_ID && game.gameSource == GameSource.STEAM) {
             // Simply use the regular LibraryListPane with empty data
             val listState = rememberLazyListState()
             val sheetState = rememberModalBottomSheetState()
@@ -51,7 +53,7 @@ internal fun LibraryDetailPane(
             )
         } else {
             AppScreen(
-                appId = appId,
+                game = game,
                 onClickPlay = onClickPlay,
                 onBack = onBack,
             )
@@ -70,7 +72,14 @@ private fun Preview_LibraryDetailPane() {
     PrefManager.init(LocalContext.current)
     PluviaTheme {
         LibraryDetailPane(
-            appId = Int.MAX_VALUE,
+            game = LibraryItem(
+                index = 0,
+                appId = Int.MAX_VALUE,
+                name = "Test Game",
+                iconHash = "",
+                isShared = false,
+                gameSource = GameSource.STEAM
+            ),
             onClickPlay = { },
             onBack = { },
         )

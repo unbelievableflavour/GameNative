@@ -69,7 +69,7 @@ internal fun LibraryListPane(
     onPageChange: (Int) -> Unit,
     onIsSearching: (Boolean) -> Unit,
     onLogout: () -> Unit,
-    onNavigate: (Int) -> Unit,
+    onNavigate: (LibraryItem) -> Unit,
     onSearchQuery: (String) -> Unit,
     onNavigateRoute: (String) -> Unit,
 ) {
@@ -193,7 +193,7 @@ internal fun LibraryListPane(
                         AppItem(
                             modifier = Modifier.animateItem(),
                             appInfo = item,
-                            onClick = { onNavigate(item.appId) }
+                            onClick = { onNavigate(item) }
                         )
                         if (item.index < state.appInfoList.lastIndex) {
                             HorizontalDivider()
@@ -290,7 +290,7 @@ private fun Preview_LibraryListPane() {
                 onSearchQuery = { },
                 onNavigateRoute = { },
                 onLogout = { },
-                onNavigate = { },
+                onNavigate = { _ -> },
             )
         }
     }

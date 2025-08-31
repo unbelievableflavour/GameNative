@@ -71,6 +71,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import app.gamenative.Constants
 import app.gamenative.R
+import app.gamenative.data.GameSource
+import app.gamenative.data.LibraryItem
 import app.gamenative.data.SteamApp
 import app.gamenative.service.SteamService
 import app.gamenative.ui.component.LoadingScreen
@@ -170,29 +172,53 @@ private fun SkeletonText(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(
-    appId: Int,
+    game: LibraryItem,
     onClickPlay: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    val appInfo by remember(appId) {
-        mutableStateOf(SteamService.getAppInfoOf(appId)!!)
+    // Only load Steam app info if this is a Steam game
+    val appInfo by remember(game.appId, game.gameSource) {
+        mutableStateOf(
+            if (game.gameSource == GameSource.STEAM) {
+                SteamService.getAppInfoOf(game.appId)
+            } else {
+                null
+            }
+        )
     }
 
-    var downloadInfo by remember(appId) {
-        mutableStateOf(SteamService.getAppDownloadInfo(appId))
+    // Steam-specific state - only relevant for Steam games
+    var downloadInfo by remember(game.appId, game.gameSource) {
+        mutableStateOf(
+            if (game.gameSource == GameSource.STEAM) {
+                SteamService.getAppDownloadInfo(game.appId)
+            } else {
+                null
+            }
+        )
     }
-    var downloadProgress by remember(appId) {
+    var downloadProgress by remember(downloadInfo) {
         mutableFloatStateOf(downloadInfo?.getProgress() ?: 0f)
     }
-    var isInstalled by remember(appId) {
-        mutableStateOf(SteamService.isAppInstalled(appId))
+    var isInstalled by remember(game.appId, game.gameSource) {
+        mutableStateOf(
+            when (game.gameSource) {
+                GameSource.STEAM -> SteamService.isAppInstalled(game.appId)
+                GameSource.GOG -> false // TODO: Implement GOG installation tracking
+            }
+        )
     }
 
-    val isValidToDownload by remember(appId) {
-        mutableStateOf(appInfo.branches.isNotEmpty() && appInfo.depots.isNotEmpty())
+    val isValidToDownload by remember(game.appId, game.gameSource, appInfo) {
+        mutableStateOf(
+            when (game.gameSource) {
+                GameSource.STEAM -> appInfo?.let { it.branches.isNotEmpty() && it.depots.isNotEmpty() } ?: false
+                GameSource.GOG -> true // GOG games are always downloadable if owned
+            }
+        )
     }
 
     val isDownloading: () -> Boolean = { downloadInfo != null && downloadProgress < 1f }
@@ -211,18 +237,26 @@ fun AppScreen(
     }
 
     val showEditConfigDialog: () -> Unit = {
-        val container = ContainerUtils.getOrCreateContainer(context, appId)
-        containerData = ContainerUtils.toContainerData(container)
-        showConfigDialog = true
+        // Only show config dialog for Steam games
+        if (game.gameSource == GameSource.STEAM) {
+            val container = ContainerUtils.getOrCreateContainer(context, game.appId)
+            containerData = ContainerUtils.toContainerData(container)
+            showConfigDialog = true
+        }
     }
 
     DisposableEffect(downloadInfo) {
         val onDownloadProgress: (Float) -> Unit = {
             if (it >= 1f) {
-                isInstalled = SteamService.isAppInstalled(appId)
+                isInstalled = when (game.gameSource) {
+                    GameSource.STEAM -> SteamService.isAppInstalled(game.appId)
+                    GameSource.GOG -> true // Mark as installed when download completes
+                }
                 downloadInfo = null
                 isInstalled = true
-                MarkerUtils.addMarker(getAppDirPath(appId), Marker.DOWNLOAD_COMPLETE_MARKER)
+                if (game.gameSource == GameSource.STEAM) {
+                    MarkerUtils.addMarker(getAppDirPath(game.appId), Marker.DOWNLOAD_COMPLETE_MARKER)
+                }
             }
             downloadProgress = it
         }
@@ -234,8 +268,8 @@ fun AppScreen(
         }
     }
 
-    LaunchedEffect(appId) {
-        Timber.d("Selected app $appId")
+    LaunchedEffect(game.appId) {
+        Timber.d("Selected app ${game.appId} (${game.gameSource})")
     }
 
     val oldGamesDirectory by remember {
@@ -306,7 +340,7 @@ fun AppScreen(
     val windowWidth = currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass
 
     /** Storage Permission **/
-    var hasStoragePermission by remember(appId) {
+    var hasStoragePermission by remember(game.appId) {
         val result = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
@@ -324,8 +358,8 @@ fun AppScreen(
             if (writePermissionGranted && readPermissionGranted) {
                 hasStoragePermission = true
 
-                val depots = SteamService.getDownloadableDepots(appId)
-                Timber.i("There are ${depots.size} depots belonging to $appId")
+                val depots = SteamService.getDownloadableDepots(game.appId)
+                Timber.i("There are ${depots.size} depots belonging to ${game.appId}")
                 // How much free space is on disk
                 val availableBytes = StorageUtils.getAvailableSpace(SteamService.defaultStoragePath)
                 val availableSpace = StorageUtils.formatBinarySize(availableBytes)
@@ -375,13 +409,13 @@ fun AppScreen(
             onConfirmClick = {
                 PostHog.capture(event = "game_install_cancelled",
                     properties = mapOf(
-                        "game_name" to appInfo.name
+                        "game_name" to game.name
                     ))
                 downloadInfo?.cancel()
-                SteamService.deleteApp(appId)
+                SteamService.deleteApp(game.appId)
                 downloadInfo = null
                 downloadProgress = 0f
-                isInstalled = SteamService.isAppInstalled(appId)
+                isInstalled = SteamService.isAppInstalled(game.appId)
                 msgDialogState = MessageDialogState(false)
             }
             onDismissRequest = { msgDialogState = MessageDialogState(false) }
@@ -399,11 +433,11 @@ fun AppScreen(
             onConfirmClick = {
                 PostHog.capture(event = "game_install_started",
                     properties = mapOf(
-                        "game_name" to appInfo.name
+                        "game_name" to game.name
                     ))
                 CoroutineScope(Dispatchers.IO).launch {
                     downloadProgress = 0f
-                    downloadInfo = SteamService.downloadApp(appId)
+                    downloadInfo = SteamService.downloadApp(game.appId)
                     msgDialogState = MessageDialogState(false)
                 }
             }
@@ -413,12 +447,12 @@ fun AppScreen(
         DialogType.DELETE_APP -> {
             onConfirmClick = {
                 // Delete the Steam app data
-                SteamService.deleteApp(appId)
+                SteamService.deleteApp(game.appId)
                 // Also delete the associated container so it will be recreated on next launch
-                ContainerUtils.deleteContainer(context, appId)
+                ContainerUtils.deleteContainer(context, game.appId)
                 msgDialogState = MessageDialogState(false)
 
-                isInstalled = SteamService.isAppInstalled(appId)
+                isInstalled = SteamService.isAppInstalled(game.appId)
             }
             onDismissRequest = { msgDialogState = MessageDialogState(false) }
             onDismissClick = { msgDialogState = MessageDialogState(false) }
@@ -471,12 +505,12 @@ fun AppScreen(
 
     ContainerConfigDialog(
         visible = showConfigDialog,
-        title = "${appInfo.name} Config",
+        title = "${game.name} Config",
         initialConfig = containerData,
         onDismissRequest = { showConfigDialog = false },
         onSave = {
             showConfigDialog = false
-            ContainerUtils.applyToContainer(context, appId, it)
+            ContainerUtils.applyToContainer(context, game.appId, it)
         },
     )
 
@@ -488,6 +522,7 @@ fun AppScreen(
     Scaffold {
         AppScreenContent(
             modifier = Modifier.padding(it),
+            game = game,
             appInfo = appInfo,
             isInstalled = isInstalled,
             isValidToDownload = isValidToDownload,
@@ -504,10 +539,10 @@ fun AppScreen(
                         confirmBtnText = context.getString(R.string.yes),
                         dismissBtnText = context.getString(R.string.no),
                     )
-                } else if (SteamService.hasPartialDownload(appId)) {
+                } else if (SteamService.hasPartialDownload(game.appId)) {
                     // Resume incomplete download
                     CoroutineScope(Dispatchers.IO).launch {
-                        downloadInfo = SteamService.downloadApp(appId)
+                        downloadInfo = SteamService.downloadApp(game.appId)
                     }
                 } else if (!isInstalled) {
                     permissionLauncher.launch(
@@ -520,7 +555,7 @@ fun AppScreen(
                     // Already installed: launch app
                     PostHog.capture(event = "game_launched",
                         properties = mapOf(
-                            "game_name" to appInfo.name
+                            "game_name" to game.name
                         ))
                     onClickPlay(false)
                 }
@@ -530,7 +565,7 @@ fun AppScreen(
                     downloadInfo?.cancel()
                     downloadInfo = null
                 } else {
-                    downloadInfo = SteamService.downloadApp(appId)
+                    downloadInfo = SteamService.downloadApp(game.appId)
                 }
             },
             onDeleteDownloadClick = {
@@ -543,7 +578,7 @@ fun AppScreen(
                     dismissBtnText = context.getString(R.string.no)
                 )
             },
-            onUpdateClick = { CoroutineScope(Dispatchers.IO).launch { downloadInfo = SteamService.downloadApp(appId) } },
+            onUpdateClick = { CoroutineScope(Dispatchers.IO).launch { downloadInfo = SteamService.downloadApp(game.appId) } },
             onBack = onBack,
             optionsMenu = arrayOf(
                 AppMenuOption(
@@ -552,7 +587,10 @@ fun AppScreen(
                         // TODO add option to view web page externally or internally
                         val browserIntent = Intent(
                             Intent.ACTION_VIEW,
-                            (Constants.Library.STORE_URL + appInfo.id).toUri(),
+                            when (game.gameSource) {
+                                GameSource.STEAM -> (Constants.Library.STORE_URL + game.appId).toUri()
+                                GameSource.GOG -> "https://www.gog.com/game/${game.gogGameId}".toUri()
+                            },
                         )
                         context.startActivity(browserIntent)
                     },
@@ -597,7 +635,7 @@ fun AppScreen(
                                 onClick = {
                                     PostHog.capture(event = "container_opened",
                                         properties = mapOf(
-                                            "game_name" to appInfo.name
+                                            "game_name" to game.name
                                         )
                                     )
                                     onClickPlay(true)
@@ -606,7 +644,7 @@ fun AppScreen(
                             AppMenuOption(
                                 AppOptionMenuType.ResetDrm,
                                 onClick = {
-                                    val container = ContainerUtils.getOrCreateContainer(context, appId)
+                                    val container = ContainerUtils.getOrCreateContainer(context, game.appId)
                                     container.isNeedsUnpacking = true
                                     container.saveData()
                                 },
@@ -615,7 +653,7 @@ fun AppScreen(
                                 AppOptionMenuType.VerifyFiles,
                                 onClick = {
                                     CoroutineScope(Dispatchers.IO).launch {
-                                        downloadInfo = SteamService.downloadApp(appId)
+                                        downloadInfo = SteamService.downloadApp(game.appId)
                                     }
                                 },
                             ),
@@ -623,7 +661,7 @@ fun AppScreen(
                                 AppOptionMenuType.Update,
                                 onClick = {
                                     CoroutineScope(Dispatchers.IO).launch {
-                                        downloadInfo = SteamService.downloadApp(appId)
+                                        downloadInfo = SteamService.downloadApp(game.appId)
                                     }
                                 },
                             ),
@@ -677,19 +715,19 @@ fun AppScreen(
                                 onClick = {
                                     PostHog.capture(event = "cloud_sync_forced",
                                         properties = mapOf(
-                                            "game_name" to appInfo.name
+                                            "game_name" to game.name
                                         ))
                                     CoroutineScope(Dispatchers.IO).launch {
                                         // Activate container before sync (required for proper path resolution)
                                         val containerManager = ContainerManager(context)
-                                        val container = ContainerUtils.getOrCreateContainer(context, appId)
+                                        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
                                         containerManager.activateContainer(container)
 
                                         val prefixToPath: (String) -> String = { prefix ->
-                                            PathType.from(prefix).toAbsPath(context, appId, SteamService.userSteamId!!.accountID)
+                                            PathType.from(prefix).toAbsPath(context, game.appId, SteamService.userSteamId!!.accountID)
                                         }
                                         val syncResult = SteamService.forceSyncUserFiles(
-                                            appId = appId,
+                                            appId = game.appId,
                                             prefixToPath = prefixToPath
                                         ).await()
 
@@ -715,18 +753,18 @@ fun AppScreen(
                                 onClick = {
                                     PostHog.capture(event = "force_download_remote",
                                         properties = mapOf(
-                                            "game_name" to appInfo.name
+                                            "game_name" to game.name
                                         ))
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val containerManager = ContainerManager(context)
-                                        val container = ContainerUtils.getOrCreateContainer(context, appId)
+                                        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
                                         containerManager.activateContainer(container)
 
                                         val prefixToPath: (String) -> String = { prefix ->
-                                            PathType.from(prefix).toAbsPath(context, appId, SteamService.userSteamId!!.accountID)
+                                            PathType.from(prefix).toAbsPath(context, game.appId, SteamService.userSteamId!!.accountID)
                                         }
                                         val syncResult = SteamService.forceSyncUserFiles(
-                                            appId = appId,
+                                            appId = game.appId,
                                             prefixToPath = prefixToPath,
                                             preferredSave = SaveLocation.Remote,
                                             overrideLocalChangeNumber = -1L
@@ -750,18 +788,18 @@ fun AppScreen(
                                 onClick = {
                                     PostHog.capture(event = "force_upload_local",
                                         properties = mapOf(
-                                            "game_name" to appInfo.name
+                                            "game_name" to game.name
                                         ))
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val containerManager = ContainerManager(context)
-                                        val container = ContainerUtils.getOrCreateContainer(context, appId)
+                                        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
                                         containerManager.activateContainer(container)
 
                                         val prefixToPath: (String) -> String = { prefix ->
-                                            PathType.from(prefix).toAbsPath(context, appId, SteamService.userSteamId!!.accountID)
+                                            PathType.from(prefix).toAbsPath(context, game.appId, SteamService.userSteamId!!.accountID)
                                         }
                                         val syncResult = SteamService.forceSyncUserFiles(
-                                            appId = appId,
+                                            appId = game.appId,
                                             prefixToPath = prefixToPath,
                                             preferredSave = SaveLocation.Local
                                         ).await()
@@ -804,7 +842,8 @@ fun AppScreen(
 @Composable
 private fun AppScreenContent(
     modifier: Modifier = Modifier,
-    appInfo: SteamApp,
+    game: LibraryItem,
+    appInfo: SteamApp? = null, // Optional for non-Steam games
     isInstalled: Boolean,
     isValidToDownload: Boolean,
     isDownloading: Boolean,
@@ -827,11 +866,11 @@ private fun AppScreenContent(
 
     var optionsMenuVisible by remember { mutableStateOf(false) }
 
-    // Compute last played timestamp from local install folder
-    val lastPlayedText by remember(appInfo.id, isInstalled) {
+    // Compute last played timestamp from local install folder (Steam only)
+    val lastPlayedText by remember(game.appId, game.gameSource, isInstalled) {
         mutableStateOf(
-            if (isInstalled) {
-                val path = SteamService.getAppDirPath(appInfo.id)
+            if (isInstalled && game.gameSource == GameSource.STEAM) {
+                val path = SteamService.getAppDirPath(game.appId)
                 val file = java.io.File(path)
                 if (file.exists()) {
                     SteamUtils.fromSteamTime((file.lastModified() / 1000).toInt())
@@ -843,41 +882,49 @@ private fun AppScreenContent(
             }
         )
     }
-    // Compute real playtime by fetching owned games
+    // Compute real playtime by fetching owned games (Steam only)
     var playtimeText by remember { mutableStateOf("0 hrs") }
-    LaunchedEffect(appInfo.id) {
-        val steamID = SteamService.userSteamId?.accountID?.toLong()
-        if (steamID != null) {
-            val games = SteamService.getOwnedGames(steamID)
-            val game = games.firstOrNull { it.appId == appInfo.id }
-            playtimeText = if (game != null) {
-                SteamUtils.formatPlayTime(game.playtimeForever) + " hrs"
-            } else "0 hrs"
+    LaunchedEffect(game.appId, game.gameSource) {
+        if (game.gameSource == GameSource.STEAM) {
+            val steamID = SteamService.userSteamId?.accountID?.toLong()
+            if (steamID != null) {
+                val games = SteamService.getOwnedGames(steamID)
+                val steamGame = games.firstOrNull { it.appId == game.appId }
+                playtimeText = if (steamGame != null) {
+                    SteamUtils.formatPlayTime(steamGame.playtimeForever) + " hrs"
+                } else "0 hrs"
+            }
+        } else {
+            playtimeText = "0 hrs" // TODO: Implement GOG playtime tracking
         }
     }
 
-    LaunchedEffect(appInfo.id) {
+    LaunchedEffect(game.appId) {
         scrollState.animateScrollTo(0)
     }
 
     var appSizeOnDisk by remember { mutableStateOf("") }
 
     var appSizeDisplayed by remember { mutableStateOf(true) }
-    // Fatass disk size call - needs to stop if we do something important like launch the app
-    LaunchedEffect(appSizeDisplayed) {
-        if (isInstalled) {
+    // Fatass disk size call - needs to stop if we do something important like launch the app (Steam only)
+    LaunchedEffect(appSizeDisplayed, game.gameSource) {
+        if (isInstalled && game.gameSource == GameSource.STEAM) {
             appSizeOnDisk = " ..."
 
-            DownloadService.getSizeOnDiskDisplay(appInfo.id) {
+            DownloadService.getSizeOnDiskDisplay(game.appId) {
                 appSizeOnDisk = "$it"
             }
+        } else if (game.gameSource == GameSource.GOG) {
+            appSizeOnDisk = "Unknown" // TODO: Implement GOG size calculation
         }
     }
 
-    // Check if an update is pending
-    var isUpdatePending by remember(appInfo.id) { mutableStateOf(false) }
-    LaunchedEffect(appInfo.id) {
-        isUpdatePending = SteamService.isUpdatePending(appInfo.id)
+    // Check if an update is pending (Steam only)
+    var isUpdatePending by remember(game.appId, game.gameSource) { mutableStateOf(false) }
+    LaunchedEffect(game.appId, game.gameSource) {
+        if (game.gameSource == GameSource.STEAM) {
+            isUpdatePending = SteamService.isUpdatePending(game.appId)
+        }
     }
 
     Column(
@@ -895,7 +942,14 @@ private fun AppScreenContent(
             // Hero background image
             CoilImage(
                 modifier = Modifier.fillMaxSize(),
-                imageModel = { appInfo.getHeroUrl() },
+                imageModel = { 
+                    when (game.gameSource) {
+                        GameSource.STEAM -> appInfo?.getHeroUrl() ?: ""
+                        GameSource.GOG -> game.imageUrl.ifEmpty { 
+                            "https://images.gog-statics.com/games/${game.gogGameId}_hero.jpg" 
+                        }
+                    }
+                },
                 imageOptions = ImageOptions(contentScale = ContentScale.Crop),
                 loading = { LoadingScreen() },
                 failure = {
@@ -984,7 +1038,7 @@ private fun AppScreenContent(
                     .padding(20.dp)
             ) {
                 Text(
-                    text = appInfo.name,
+                    text = game.name,
                     style = MaterialTheme.typography.headlineLarge.copy(
                         fontWeight = FontWeight.Bold,
                         shadow = Shadow(
@@ -997,9 +1051,14 @@ private fun AppScreenContent(
                 )
 
                 Text(
-                    text = "${appInfo.developer} • ${remember(appInfo.releaseDate) {
-                        SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(appInfo.releaseDate * 1000))
-                    }}",
+                    text = when (game.gameSource) {
+                        GameSource.STEAM -> "${appInfo?.developer ?: "Unknown"} • ${remember(appInfo?.releaseDate) {
+                            if (appInfo?.releaseDate != null) {
+                                SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(appInfo.releaseDate * 1000))
+                            } else "Unknown"
+                        }}"
+                        GameSource.GOG -> "GOG Game" // TODO: Add developer/release date to GOGGame entity
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White.copy(alpha = 0.9f)
                 )
@@ -1019,7 +1078,8 @@ private fun AppScreenContent(
             ) {
                 // Pause/Resume and Delete when downloading or paused
                 // Determine if there's a partial download (in-session or from ungraceful close)
-                val isPartiallyDownloaded = (downloadProgress > 0f && downloadProgress < 1f) || SteamService.hasPartialDownload(appInfo.id)
+                val isPartiallyDownloaded = (downloadProgress > 0f && downloadProgress < 1f) || 
+                    (game.gameSource == GameSource.STEAM && SteamService.hasPartialDownload(game.appId))
                 // Disable resume when Wi-Fi only is enabled and there's no Wi-Fi
                 val isResume = !isDownloading && isPartiallyDownloaded
                 val pauseResumeEnabled = if (isResume) wifiAllowed else true
@@ -1324,7 +1384,10 @@ private fun AppScreenContent(
                                     } else {
                                         if (!isInstalled){
                                             Text(
-                                                text = DownloadService.getSizeFromStoreDisplay(appInfo.id),
+                                                text = when (game.gameSource) {
+                                                    GameSource.STEAM -> DownloadService.getSizeFromStoreDisplay(game.appId)
+                                                    GameSource.GOG -> "Unknown" // TODO: Add size info to GOG games
+                                                },
                                                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
                                             )
                                         }
@@ -1355,7 +1418,10 @@ private fun AppScreenContent(
                                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f)),
                                         ) {
                                             Text(
-                                                text = getAppDirPath(appInfo.id),
+                                                text = when (game.gameSource) {
+                                                    GameSource.STEAM -> getAppDirPath(game.appId)
+                                                    GameSource.GOG -> "GOG installation path" // TODO: Implement GOG path tracking
+                                                },
                                                 style = MaterialTheme.typography.labelMedium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1375,7 +1441,10 @@ private fun AppScreenContent(
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = appInfo.developer,
+                                        text = when (game.gameSource) {
+                                            GameSource.STEAM -> appInfo?.developer ?: "Unknown"
+                                            GameSource.GOG -> "Unknown" // TODO: Add developer info to GOG games
+                                        },
                                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
                                     )
                                 }
@@ -1391,9 +1460,14 @@ private fun AppScreenContent(
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = remember(appInfo.releaseDate) {
-                                            val date = Date(appInfo.releaseDate * 1000)
-                                            SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(date)
+                                        text = when (game.gameSource) {
+                                            GameSource.STEAM -> remember(appInfo?.releaseDate) {
+                                                if (appInfo?.releaseDate != null) {
+                                                    val date = Date(appInfo.releaseDate * 1000)
+                                                    SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(date)
+                                                } else "Unknown"
+                                            }
+                                            GameSource.GOG -> "Unknown" // TODO: Add release date to GOG games
                                         },
                                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
                                     )
@@ -1479,6 +1553,14 @@ private fun Preview_AppScreen() {
     PluviaTheme {
         Surface {
             AppScreenContent(
+                game = LibraryItem(
+                    index = 0,
+                    appId = 1,
+                    name = "Test Game",
+                    iconHash = "",
+                    isShared = false,
+                    gameSource = GameSource.STEAM
+                ),
                 appInfo = fakeAppInfo(1),
                 isInstalled = false,
                 isValidToDownload = true,

@@ -7,8 +7,12 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.gamenative.PrefManager
+import app.gamenative.data.Game
+import app.gamenative.data.GameSource
+import app.gamenative.data.GOGGameWrapper
 import app.gamenative.data.LibraryItem
-import app.gamenative.data.SteamApp
+import app.gamenative.data.SteamGameWrapper
+import app.gamenative.db.dao.GOGGameDao
 import app.gamenative.db.dao.SteamAppDao
 import app.gamenative.service.DownloadService
 import app.gamenative.service.SteamService
@@ -29,7 +33,8 @@ import kotlin.math.min
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
-    private val steamAppDao: SteamAppDao,
+private val steamAppDao: SteamAppDao,
+private val gogGameDao: GOGGameDao,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryState())
@@ -42,20 +47,34 @@ class LibraryViewModel @Inject constructor(
     private var paginationCurrentPage: Int = 0;
     private var lastPageInCurrentFilter: Int = 0;
 
-    // Complete and unfiltered app list
-    private var appList: List<SteamApp> = emptyList()
+    // Complete and unfiltered games from all sources
+    private var allGames: List<Game> = emptyList()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            steamAppDao.getAllOwnedApps(
-                // ownerIds = SteamService.familyMembers.ifEmpty { listOf(SteamService.userSteamId!!.accountID.toInt()) },
-            ).collect { apps ->
-                Timber.tag("LibraryViewModel").d("Collecting ${apps.size} apps")
-
-                if (appList.size != apps.size) {
-                    // Don't filter if it's no change
-                    appList = apps
-
+            // Combine Steam and GOG data flows
+            kotlinx.coroutines.flow.combine(
+                steamAppDao.getAllOwnedApps(),
+                gogGameDao.getAll()
+            ) { steamApps, gogGames ->
+                Timber.tag("LibraryViewModel").d("Collecting ${steamApps.size} Steam apps and ${gogGames.size} GOG games")
+                
+                val games = mutableListOf<Game>()
+                
+                // Convert Steam apps to unified Game interface
+                steamApps.forEach { steamApp ->
+                    games.add(SteamGameWrapper(steamApp))
+                }
+                
+                // Convert GOG games to unified Game interface
+                gogGames.forEach { gogGame ->
+                    games.add(GOGGameWrapper(gogGame))
+                }
+                
+                games
+            }.collect { games ->
+                if (allGames.size != games.size) {
+                    allGames = games
                     onFilterApps(paginationCurrentPage)
                 }
             }
@@ -111,70 +130,72 @@ class LibraryViewModel @Inject constructor(
             val currentState = _state.value
             val currentFilter = AppFilter.getAppType(currentState.appInfoSortType)
 
-            val downloadDirectoryApps = DownloadService.getDownloadDirectoryApps()
-
-            var filteredList = appList
+            // Apply filters to the unified games - SINGLE LOOP!
+            val filteredGames = allGames
                 .asSequence()
-                .filter { item ->
-                    SteamService.familyMembers.ifEmpty {
-                        listOf(SteamService.userSteamId!!.accountID.toInt())
-                    }.map {
-                        item.ownerAccountId.contains(it)
-                    }.any()
+                .filter { game ->
+                    // Platform filter
+                    when {
+                        currentState.appInfoSortType.contains(AppFilter.STEAM) && currentState.appInfoSortType.contains(AppFilter.GOG) -> true
+                        currentState.appInfoSortType.contains(AppFilter.STEAM) -> game.source == GameSource.STEAM
+                        currentState.appInfoSortType.contains(AppFilter.GOG) -> game.source == GameSource.GOG
+                        else -> true
+                    }
                 }
-                .filter { item ->
-                    currentFilter.any { item.type == it }
+                .filter { game ->
+                    // Search filter
+                    if (currentState.searchQuery.isNotEmpty()) {
+                        game.name.contains(currentState.searchQuery, ignoreCase = true)
+                    } else {
+                        true
+                    }
                 }
-                .filter { item ->
+                .filter { game ->
+                    // Installation filter
+                    if (currentState.appInfoSortType.contains(AppFilter.INSTALLED)) {
+                        game.isInstalled
+                    } else {
+                        true
+                    }
+                }
+                .filter { game ->
+                    // Shared filter (only applies to Steam)
                     if (currentState.appInfoSortType.contains(AppFilter.SHARED)) {
                         true
                     } else {
-                        item.ownerAccountId.contains(SteamService.userSteamId!!.accountID.toInt())
+                        !game.isShared
                     }
                 }
-                .filter { item ->
-                    if (currentState.searchQuery.isNotEmpty()) {
-                        item.name.contains(currentState.searchQuery, ignoreCase = true)
-                    } else {
-                        true
-                    }
-                }
-                .filter { item ->
-                    if (currentState.appInfoSortType.contains(AppFilter.INSTALLED)) {
-                        downloadDirectoryApps.contains(SteamService.getAppDirName(item))
+                .filter { game ->
+                    // Type filter (only applies to Steam games with types)
+                    if (currentFilter.isNotEmpty() && game is SteamGameWrapper) {
+                        currentFilter.contains(game.originalApp.type)
                     } else {
                         true
                     }
                 }
                 .sortedWith(
-                    // Comes from DAO in alphabetical order
-                    compareByDescending<SteamApp> { downloadDirectoryApps.contains(SteamService.getAppDirName(it)) }
-                );
+                    compareBy<Game> { it.source != GameSource.STEAM } // Steam games first
+                        .thenBy { it.name.lowercase() } // Then alphabetical
+                )
+                .toList()
+
+            // Convert to LibraryItems
+            val libraryItems = filteredGames.mapIndexed { index, game ->
+                game.toLibraryItem(index)
+            }
 
             // Total count for the current filter
-            val totalFound = filteredList.count()
+            val totalFound = libraryItems.size
 
             // Determine how many pages and slice the list for incremental loading
             val pageSize = PrefManager.itemsPerPage
             // Update internal pagination state
             paginationCurrentPage = paginationPage
-            lastPageInCurrentFilter = (totalFound - 1) / pageSize
+            lastPageInCurrentFilter = if (totalFound > 0) (totalFound - 1) / pageSize else 0
             // Calculate how many items to show: (pagesLoaded * pageSize)
             val endIndex = min((paginationPage + 1) * pageSize, totalFound)
-            val pagedSequence = filteredList.take(endIndex)
-            val thisSteamId: Int = SteamService.userSteamId?.accountID?.toInt() ?: 0
-            // Map to UI model
-            val filteredListPage = pagedSequence
-                .mapIndexed { idx, item ->
-                    LibraryItem(
-                        index = idx,
-                        appId = item.id,
-                        name = item.name,
-                        iconHash = item.clientIconHash,
-                        isShared = (thisSteamId != 0 && !item.ownerAccountId.contains(thisSteamId)),
-                    )
-                }
-                .toList()
+            val filteredListPage = libraryItems.take(endIndex)
 
             Timber.tag("LibraryViewModel").d("Filtered list size: ${totalFound}")
             _state.update {
