@@ -490,7 +490,7 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
                     Timber.i("Successfully fetched details for ${games.size} games")
                     Result.success(games)
                 } else {
-                    val errorText = response.callAttr("text")?.toString() ?: "Unknown error"
+                    val errorText = response.get("text")?.toString() ?: "Unknown error"
                     Timber.e("GOG API error: HTTP $statusCode - $errorText")
                     Result.failure(Exception("Failed to get library: HTTP $statusCode"))
                 }

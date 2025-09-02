@@ -1,8 +1,16 @@
 package app.gamenative.service.GOG
 
 import android.content.Context
+import app.gamenative.PluviaApp
+import app.gamenative.data.GOGGame
 import app.gamenative.db.dao.GOGGameDao
+import app.gamenative.enums.LoginResult
+import app.gamenative.events.SteamEvent
+import app.gamenative.service.GamesDBService
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
@@ -10,7 +18,8 @@ import javax.inject.Singleton
 
 @Singleton
 class GOGLibraryManager @Inject constructor(
-    private val gogGameDao: GOGGameDao
+    private val gogGameDao: GOGGameDao,
+    private val gamesDBService: GamesDBService
 ) {
 
     /**
@@ -35,15 +44,30 @@ class GOGLibraryManager @Inject constructor(
                 val games = libraryResult.getOrThrow()
                 Timber.i("Syncing ${games.size} GOG games to database")
                 
-                // Insert/update games in database
-                gogGameDao.insertAll(games)
+                if (games.isNotEmpty()) {
+                    // Enhance games with GamesDB data
+                    val enhancedGames = enhanceGamesWithGamesDB(games)
+                    
+                    // Insert/update games in database
+                    gogGameDao.insertAll(enhancedGames)
+                    
+                    Timber.i("GOG library sync completed successfully with ${enhancedGames.size} games")
+                } else {
+                    Timber.i("No GOG games to sync")
+                }
                 
-                Timber.i("GOG library sync completed successfully")
                 Result.success(Unit)
             } else {
                 val error = libraryResult.exceptionOrNull()
-                Timber.e(error, "Failed to sync GOG library")
-                Result.failure(error ?: Exception("Unknown error during GOG sync"))
+                val errorMessage = error?.message ?: "Unknown error during GOG sync"
+                
+                if (errorMessage.contains("authentication", ignoreCase = true)) {
+                    Timber.w("GOG authentication issue: $errorMessage")
+                    Result.failure(Exception("GOG authentication required: $errorMessage"))
+                } else {
+                    Timber.e(error, "Failed to sync GOG library: $errorMessage")
+                    Result.failure(error ?: Exception(errorMessage))
+                }
             }
         } catch (e: Exception) {
             Timber.e(e, "Exception during GOG library sync")
@@ -75,5 +99,55 @@ class GOGLibraryManager @Inject constructor(
             Timber.e(e, "Failed to clear GOG library")
             Result.failure(e)
         }
+    }
+
+    /**
+     * Enhance GOG games with GamesDB metadata for better icons and artwork
+     */
+    private suspend fun enhanceGamesWithGamesDB(games: List<GOGGame>): List<GOGGame> = withContext(Dispatchers.IO) {
+        val enhancedGames = mutableListOf<GOGGame>()
+        
+        games.forEach { game ->
+            try {
+                Timber.d("Enhancing game ${game.title} (${game.id}) with GamesDB data")
+                
+                // Fetch GamesDB data for this GOG game
+                val gamesDbResult = gamesDBService.getGamesdbData(
+                    store = "gog",
+                    gameId = game.id,
+                    forceUpdate = false
+                )
+                
+                val gamesDbData = gamesDbResult.getOrNull()?.data
+                
+                if (gamesDbData == null) {
+                    // Handle both failure and null data cases
+                    if (gamesDbResult.isFailure) {
+                        Timber.w("Failed to fetch GamesDB data for ${game.title}: ${gamesDbResult.exceptionOrNull()?.message}")
+                    } else {
+                        Timber.d("No GamesDB data found for ${game.title}")
+                    }
+                    enhancedGames.add(game) // Add original game without enhancement
+                    return@forEach // Early return from forEach
+                }
+                
+                // Happy path - we have valid data
+                Timber.d("Found GamesDB data for ${game.title}: ${gamesDbData.getTitleString()}")
+                
+                // Create enhanced game with GamesDB image URLs
+                val enhancedGame = game.copy(
+                    imageUrl = gamesDBService.getBestIconUrl(gamesDbData)
+                )
+                
+                enhancedGames.add(enhancedGame)
+                Timber.d("Enhanced ${game.title} with GamesDB icons: icon=${gamesDbData.getIconUrl()}, squareIcon=${gamesDbData.getSquareIconUrl()}, logo=${gamesDbData.getLogoUrl()}")
+            } catch (e: Exception) {
+                Timber.e(e, "Exception enhancing ${game.title} with GamesDB data")
+                enhancedGames.add(game) // Add original game without enhancement
+            }
+        }
+        
+        Timber.i("Enhanced ${enhancedGames.size} games with GamesDB data")
+        enhancedGames
     }
 }
