@@ -1198,11 +1198,15 @@ private suspend fun getWineStartCommand(
 
     Timber.tag("XServerScreen").d("appLaunchInfo is $appLaunchInfo")
     val args = if (bootToContainer || appLaunchInfo == null) {
-        // Check if this is a GOG game that should launch directly
-        if (libraryItem.gameSource == GameSource.GOG && libraryItem.gogGameId != null) {
+        // If bootToContainer is true, always show file manager regardless of game type
+        if (bootToContainer) {
+            "\"wfm.exe\""
+        }
+        // Check if this is a GOG game that should launch directly (only for Play button)
+        else if (libraryItem.gameSource == GameSource.GOG && libraryItem.gogGameId != null) {
             try {
-                // Find GOG game directory
-                val gogGamesDir = "/data/user/0/app.gamenative/files/storage/gog_games"
+                // Find GOG game directory using E: drive mount path
+                val gogGamesDir = "/data/data/app.gamenative/storage/gog_games"
                 Timber.i("Looking for GOG game '${libraryItem.name}' in directory: $gogGamesDir")
                 
                 val gogGamesDirFile = File(gogGamesDir)
@@ -1240,18 +1244,24 @@ private suspend fun getWineStartCommand(
                             Timber.i("Selected main executable: ${mainExe?.name} (${mainExe?.length()} bytes)")
                             
                             if (mainExe != null) {
-                                // Calculate the Wine path
-                                val relativePath = mainExe.relativeTo(File(gogGamesDir)).path.replace('\\', '/')
+                                // Set working directory to the game's executable directory
                                 val executableDir = gameSubDir.absolutePath
                                 guestProgramLauncherComponent.workingDir = File(executableDir)
                                 
-                                Timber.i("GOG game executable relative path: $relativePath")
-                                Timber.i("GOG game working directory: $executableDir")
-                                Timber.i("Full Wine command will be: \"E:/${relativePath}\"")
+                                // Calculate relative path from the game subdirectory
+                                val executableName = mainExe.name
+                                val gameRelativePath = gameDir.relativeTo(File(gogGamesDir)).path.replace('\\', '/')
+                                val gameSubDirRelativePath = gameSubDir.relativeTo(File(gogGamesDir)).path.replace('\\', '/')
                                 
-                                // Use E: drive for GOG games
-                                envVars.put("WINEPATH", "E:/${relativePath.substringBeforeLast("/", "")}")
-                                "\"E:/${relativePath}\""
+                                Timber.i("GOG game executable name: $executableName")
+                                Timber.i("GOG game working directory: $executableDir")
+                                Timber.i("GOG game subdirectory relative path: $gameSubDirRelativePath")
+                                
+                                // Set WINEPATH to the game subdirectory on E: drive
+                                envVars.put("WINEPATH", "E:/$gameSubDirRelativePath")
+                                
+                                Timber.i("Full Wine command will be: \"$executableName\"")
+                                "\"$executableName\""
                             } else {
                                 Timber.w("No executable found for GOG game ${libraryItem.name}, opening file manager")
                                 "\"wfm.exe\""
@@ -1308,6 +1318,7 @@ private suspend fun getWineStartCommand(
         }
     }
 
+    // Always use winhandler.exe wrapper for proper windowing and display
     return "winhandler.exe $args"
 }
 private fun getSteamlessTarget(

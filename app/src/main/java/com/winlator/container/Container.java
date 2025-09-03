@@ -735,7 +735,8 @@ public class Container {
             }
 
             KeyValueSet wincomponents1 = new KeyValueSet(DEFAULT_WINCOMPONENTS);
-            KeyValueSet wincomponents2 = new KeyValueSet(data.getString("wincomponents"));
+            String wincomponentsValue = data.has("wincomponents") ? data.getString("wincomponents") : DEFAULT_WINCOMPONENTS;
+            KeyValueSet wincomponents2 = new KeyValueSet(wincomponentsValue);
             String result = "";
 
             for (String[] wincomponent1 : wincomponents1) {

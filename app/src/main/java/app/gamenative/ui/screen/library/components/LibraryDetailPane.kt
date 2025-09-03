@@ -60,6 +60,7 @@ internal fun LibraryDetailPane(
         } else {
             AppScreen(
                 game = game,
+                gameManagerViewModel = gameManagerViewModel,
                 onClickPlay = onClickPlay,
                 onBack = onBack,
             )

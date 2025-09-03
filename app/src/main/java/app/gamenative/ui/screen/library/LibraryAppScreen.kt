@@ -234,12 +234,10 @@ fun AppScreen(
     }
 
     val showEditConfigDialog: () -> Unit = {
-        // Only show config dialog for Steam games
-        if (game.gameSource == GameSource.STEAM) {
-            val container = ContainerUtils.getOrCreateContainer(context, game.appId)
-            containerData = ContainerUtils.toContainerData(container)
-            showConfigDialog = true
-        }
+        // Show config dialog for both Steam and GOG games
+        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
+        containerData = ContainerUtils.toContainerData(container)
+        showConfigDialog = true
     }
 
     DisposableEffect(downloadInfo) {
@@ -645,31 +643,37 @@ fun AppScreen(
                 AppMenuOption(
                     optionType = AppOptionMenuType.EditContainer,
                     onClick = {
-                        if (!SteamService.isImageFsInstalled(context)) {
-                            if (!SteamService.isImageFsInstallable(context)) {
-                                msgDialogState = MessageDialogState(
-                                    visible = true,
-                                    type = DialogType.INSTALL_IMAGEFS,
-                                    title = "Download & Install ImageFS",
-                                    message = "The Ubuntu image needs to be downloaded and installed before " +
-                                        "being able to edit the configuration. This operation might take " +
-                                        "a few minutes. Would you like to continue?",
-                                    confirmBtnText = "Proceed",
-                                    dismissBtnText = "Cancel",
-                                )
+                        // For Steam games, check ImageFS requirements
+                        if (game.gameSource == GameSource.STEAM) {
+                            if (!SteamService.isImageFsInstalled(context)) {
+                                if (!SteamService.isImageFsInstallable(context)) {
+                                    msgDialogState = MessageDialogState(
+                                        visible = true,
+                                        type = DialogType.INSTALL_IMAGEFS,
+                                        title = "Download & Install ImageFS",
+                                        message = "The Ubuntu image needs to be downloaded and installed before " +
+                                            "being able to edit the configuration. This operation might take " +
+                                            "a few minutes. Would you like to continue?",
+                                        confirmBtnText = "Proceed",
+                                        dismissBtnText = "Cancel",
+                                    )
+                                } else {
+                                    msgDialogState = MessageDialogState(
+                                        visible = true,
+                                        type = DialogType.INSTALL_IMAGEFS,
+                                        title = "Install ImageFS",
+                                        message = "The Ubuntu image needs to be installed before being able to edit " +
+                                            "the configuration. This operation might take a few minutes. " +
+                                            "Would you like to continue?",
+                                        confirmBtnText = "Proceed",
+                                        dismissBtnText = "Cancel",
+                                    )
+                                }
                             } else {
-                                msgDialogState = MessageDialogState(
-                                    visible = true,
-                                    type = DialogType.INSTALL_IMAGEFS,
-                                    title = "Install ImageFS",
-                                    message = "The Ubuntu image needs to be installed before being able to edit " +
-                                        "the configuration. This operation might take a few minutes. " +
-                                        "Would you like to continue?",
-                                    confirmBtnText = "Proceed",
-                                    dismissBtnText = "Cancel",
-                                )
+                                showEditConfigDialog()
                             }
                         } else {
+                            // For GOG games, directly show the config dialog (no ImageFS requirement)
                             showEditConfigDialog()
                         }
                     },
