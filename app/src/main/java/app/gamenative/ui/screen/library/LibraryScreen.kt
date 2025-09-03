@@ -164,7 +164,7 @@ private fun Preview_LibraryScreenContent() {
                     val item = fakeAppInfo(idx)
                     LibraryItem(
                         index = idx,
-                        appId = item.id,
+                        appId = "steam_${item.id}",
                         name = item.name,
                         iconHash = item.iconHash,
                     )

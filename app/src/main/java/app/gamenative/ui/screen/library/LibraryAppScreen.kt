@@ -186,7 +186,7 @@ fun AppScreen(
     val appInfo by remember(game.appId, game.gameSource) {
         mutableStateOf(
             if (game.gameSource == GameSource.STEAM) {
-                SteamService.getAppInfoOf(game.appId)
+                SteamService.getAppInfoOf(game.steamAppId)
             } else {
                 null
             }
@@ -235,7 +235,7 @@ fun AppScreen(
 
     val showEditConfigDialog: () -> Unit = {
         // Show config dialog for both Steam and GOG games
-        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
+        val container = ContainerUtils.getOrCreateContainer(context, game)
         containerData = ContainerUtils.toContainerData(container)
         showConfigDialog = true
     }
@@ -244,13 +244,13 @@ fun AppScreen(
         val onDownloadProgress: (Float) -> Unit = {
             if (it >= 1f) {
                 isInstalled = when (game.gameSource) {
-                    GameSource.STEAM -> SteamService.isAppInstalled(game.appId)
+                    GameSource.STEAM -> SteamService.isAppInstalled(game.steamAppId)
                     GameSource.GOG -> true // Mark as installed when download completes
                 }
                 downloadInfo = null
                 isInstalled = true
                 if (game.gameSource == GameSource.STEAM) {
-                    MarkerUtils.addMarker(getAppDirPath(game.appId), Marker.DOWNLOAD_COMPLETE_MARKER)
+                    MarkerUtils.addMarker(getAppDirPath(game.steamAppId), Marker.DOWNLOAD_COMPLETE_MARKER)
                 }
             }
             downloadProgress = it
@@ -355,8 +355,8 @@ fun AppScreen(
 
             when (game.gameSource) {
                 GameSource.STEAM -> {
-                    val depots = SteamService.getDownloadableDepots(game.appId)
-                    Timber.i("There are ${depots.size} depots belonging to ${game.appId}")
+                    val depots = SteamService.getDownloadableDepots(game.steamAppId)
+                    Timber.i("There are ${depots.size} depots belonging to ${game.steamAppId}")
                     // How much free space is on disk
                     val availableBytes = StorageUtils.getAvailableSpace(SteamService.defaultStoragePath)
                     val availableSpace = StorageUtils.formatBinarySize(availableBytes)
@@ -695,7 +695,7 @@ fun AppScreen(
                             AppMenuOption(
                                 AppOptionMenuType.ResetDrm,
                                 onClick = {
-                                    val container = ContainerUtils.getOrCreateContainer(context, game.appId)
+                                    val container = ContainerUtils.getOrCreateContainer(context, game)
                                     container.isNeedsUnpacking = true
                                     container.saveData()
                                 },
@@ -777,14 +777,14 @@ fun AppScreen(
                                     CoroutineScope(Dispatchers.IO).launch {
                                         // Activate container before sync (required for proper path resolution)
                                         val containerManager = ContainerManager(context)
-                                        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
+                                        val container = ContainerUtils.getOrCreateContainer(context, game)
                                         containerManager.activateContainer(container)
 
                                         val prefixToPath: (String) -> String = { prefix ->
-                                            PathType.from(prefix).toAbsPath(context, game.appId, SteamService.userSteamId!!.accountID)
+                                            PathType.from(prefix).toAbsPath(context, game.steamAppId, SteamService.userSteamId!!.accountID)
                                         }
                                         val syncResult = SteamService.forceSyncUserFiles(
-                                            appId = game.appId,
+                                            appId = game.steamAppId,
                                             prefixToPath = prefixToPath
                                         ).await()
 
@@ -814,14 +814,14 @@ fun AppScreen(
                                         ))
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val containerManager = ContainerManager(context)
-                                        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
+                                        val container = ContainerUtils.getOrCreateContainer(context, game)
                                         containerManager.activateContainer(container)
 
                                         val prefixToPath: (String) -> String = { prefix ->
-                                            PathType.from(prefix).toAbsPath(context, game.appId, SteamService.userSteamId!!.accountID)
+                                            PathType.from(prefix).toAbsPath(context, game.steamAppId, SteamService.userSteamId!!.accountID)
                                         }
                                         val syncResult = SteamService.forceSyncUserFiles(
-                                            appId = game.appId,
+                                            appId = game.steamAppId,
                                             prefixToPath = prefixToPath,
                                             preferredSave = SaveLocation.Remote,
                                             overrideLocalChangeNumber = -1L
@@ -849,14 +849,14 @@ fun AppScreen(
                                         ))
                                     CoroutineScope(Dispatchers.IO).launch {
                                         val containerManager = ContainerManager(context)
-                                        val container = ContainerUtils.getOrCreateContainer(context, game.appId)
+                                        val container = ContainerUtils.getOrCreateContainer(context, game)
                                         containerManager.activateContainer(container)
 
                                         val prefixToPath: (String) -> String = { prefix ->
-                                            PathType.from(prefix).toAbsPath(context, game.appId, SteamService.userSteamId!!.accountID)
+                                            PathType.from(prefix).toAbsPath(context, game.steamAppId, SteamService.userSteamId!!.accountID)
                                         }
                                         val syncResult = SteamService.forceSyncUserFiles(
-                                            appId = game.appId,
+                                            appId = game.steamAppId,
                                             prefixToPath = prefixToPath,
                                             preferredSave = SaveLocation.Local
                                         ).await()
@@ -927,7 +927,7 @@ private fun AppScreenContent(
     val lastPlayedText by remember(game.appId, game.gameSource, isInstalled) {
         mutableStateOf(
             if (isInstalled && game.gameSource == GameSource.STEAM) {
-                val path = SteamService.getAppDirPath(game.appId)
+                val path = SteamService.getAppDirPath(game.steamAppId)
                 val file = java.io.File(path)
                 if (file.exists()) {
                     SteamUtils.fromSteamTime((file.lastModified() / 1000).toInt())
@@ -946,7 +946,7 @@ private fun AppScreenContent(
             val steamID = SteamService.userSteamId?.accountID?.toLong()
             if (steamID != null) {
                 val games = SteamService.getOwnedGames(steamID)
-                val steamGame = games.firstOrNull { it.appId == game.appId }
+                val steamGame = games.firstOrNull { it.appId == game.steamAppId }
                 playtimeText = if (steamGame != null) {
                     SteamUtils.formatPlayTime(steamGame.playtimeForever) + " hrs"
                 } else "0 hrs"
@@ -968,7 +968,7 @@ private fun AppScreenContent(
         if (isInstalled && game.gameSource == GameSource.STEAM) {
             appSizeOnDisk = " ..."
 
-            DownloadService.getSizeOnDiskDisplay(game.appId) {
+            DownloadService.getSizeOnDiskDisplay(game.steamAppId) {
                 appSizeOnDisk = "$it"
             }
         } else if (game.gameSource == GameSource.GOG) {
@@ -980,7 +980,7 @@ private fun AppScreenContent(
     var isUpdatePending by remember(game.appId, game.gameSource) { mutableStateOf(false) }
     LaunchedEffect(game.appId, game.gameSource) {
         if (game.gameSource == GameSource.STEAM) {
-            isUpdatePending = SteamService.isUpdatePending(game.appId)
+            isUpdatePending = SteamService.isUpdatePending(game.steamAppId)
         }
     }
 
@@ -1136,7 +1136,7 @@ private fun AppScreenContent(
                 // Pause/Resume and Delete when downloading or paused
                 // Determine if there's a partial download (in-session or from ungraceful close)
                 val isPartiallyDownloaded = (downloadProgress > 0f && downloadProgress < 1f) || 
-                    (game.gameSource == GameSource.STEAM && SteamService.hasPartialDownload(game.appId))
+                    (game.gameSource == GameSource.STEAM && SteamService.hasPartialDownload(game.steamAppId))
                 // Disable resume when Wi-Fi only is enabled and there's no Wi-Fi
                 val isResume = !isDownloading && isPartiallyDownloaded
                 val pauseResumeEnabled = if (isResume) wifiAllowed else true
@@ -1442,7 +1442,7 @@ private fun AppScreenContent(
                                         if (!isInstalled){
                                             Text(
                                                 text = when (game.gameSource) {
-                                                    GameSource.STEAM -> DownloadService.getSizeFromStoreDisplay(game.appId)
+                                                    GameSource.STEAM -> DownloadService.getSizeFromStoreDisplay(game.steamAppId)
                                                     GameSource.GOG -> "Unknown" // TODO: Add size info to GOG games
                                                 },
                                                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold)
@@ -1476,7 +1476,7 @@ private fun AppScreenContent(
                                         ) {
                                             Text(
                                                 text = when (game.gameSource) {
-                                                    GameSource.STEAM -> getAppDirPath(game.appId)
+                                                    GameSource.STEAM -> getAppDirPath(game.steamAppId)
                                                     GameSource.GOG -> "GOG installation path" // TODO: Implement GOG path tracking
                                                 },
                                                 style = MaterialTheme.typography.labelMedium,
@@ -1612,7 +1612,7 @@ private fun Preview_AppScreen() {
             AppScreenContent(
                 game = LibraryItem(
                     index = 0,
-                    appId = 1,
+                    appId = "steam_1",
                     name = "Test Game",
                     iconHash = "",
                     isShared = false,

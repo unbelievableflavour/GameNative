@@ -58,7 +58,7 @@ internal fun LibraryList(
                 AppItem(
                     modifier = Modifier.animateItem(),
                     appInfo = item,
-                    onClick = { onItemClick(item.appId) },
+                    onClick = { onItemClick(item.steamAppId) },
                     gameManagerViewModel = gameManagerViewModel,
                 )
 

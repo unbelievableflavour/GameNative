@@ -208,7 +208,12 @@ class MainViewModel @Inject constructor(
     }
 
     fun setLaunchedLibraryItem(libraryItem: LibraryItem) {
-        _state.update { it.copy(launchedLibraryItem = libraryItem) }
+        _state.update { 
+            it.copy(
+                launchedLibraryItem = libraryItem,
+                launchedAppId = libraryItem.steamAppId // For backward compatibility
+            ) 
+        }
     }
 
     fun setBootToContainer(value: Boolean) {
@@ -254,11 +259,11 @@ class MainViewModel @Inject constructor(
 
             val apiJob = viewModelScope.async(Dispatchers.IO) {
                 if (libraryItem.gameSource == GameSource.STEAM) {
-                    val container = ContainerUtils.getOrCreateContainer(context, libraryItem.appId)
+                    val container = ContainerUtils.getOrCreateContainer(context, libraryItem)
                     if (container.isLaunchRealSteam()) {
-                        SteamUtils.restoreSteamApi(context, libraryItem.appId)
+                        SteamUtils.restoreSteamApi(context, libraryItem.steamAppId)
                     } else {
-                        SteamUtils.replaceSteamApi(context, libraryItem.appId)
+                        SteamUtils.replaceSteamApi(context, libraryItem.steamAppId)
                     }
                 } else {
                     Timber.i("Skipping Steam API replacement for ${libraryItem.gameSource} game: ${libraryItem.name}")
@@ -272,7 +277,7 @@ class MainViewModel @Inject constructor(
 
             // Store the library item for XServerScreen
             setLaunchedLibraryItem(libraryItem)
-            setLaunchedAppId(libraryItem.appId) // Keep for backward compatibility
+            setLaunchedAppId(libraryItem.steamAppId) // Keep for backward compatibility
 
             _uiEvent.send(MainUiEvent.LaunchApp)
         }
@@ -397,4 +402,6 @@ class MainViewModel @Inject constructor(
             Timber.e("Game launch error: $error")
         }
     }
+    
+
 }

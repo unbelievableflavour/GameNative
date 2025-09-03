@@ -1,6 +1,7 @@
 package app.gamenative.utils
 
 import android.content.Context
+import app.gamenative.data.LibraryItem
 import app.gamenative.enums.Marker
 import app.gamenative.PrefManager
 import app.gamenative.service.SteamService
@@ -188,7 +189,7 @@ object ContainerUtils {
         )
     }
 
-    fun applyToContainer(context: Context, appId: Int, containerData: ContainerData) {
+    fun applyToContainer(context: Context, appId: String, containerData: ContainerData) {
         val containerManager = ContainerManager(context)
         if (containerManager.hasContainer(appId)) {
             val container = containerManager.getContainerById(appId)
@@ -269,9 +270,15 @@ object ContainerUtils {
         container.setLC_ALL(lcAll)
         // If language changed, remove the STEAM_DLL_REPLACED marker so settings regenerate
         if (previousLanguage.lowercase() != containerData.language.lowercase()) {
-            val appDirPath = SteamService.getAppDirPath(container.id)
-            MarkerUtils.removeMarker(appDirPath, Marker.STEAM_DLL_REPLACED)
-            Timber.i("Language changed from '$previousLanguage' to '${containerData.language}'. Cleared STEAM_DLL_REPLACED marker for container ${container.id}.")
+            // Only apply to Steam containers
+            if (container.id.startsWith("steam_")) {
+                val steamAppId = container.id.removePrefix("steam_").toIntOrNull()
+                if (steamAppId != null) {
+                    val appDirPath = SteamService.getAppDirPath(steamAppId)
+                    MarkerUtils.removeMarker(appDirPath, Marker.STEAM_DLL_REPLACED)
+                    Timber.i("Language changed from '$previousLanguage' to '${containerData.language}'. Cleared STEAM_DLL_REPLACED marker for container ${container.id}.")
+                }
+            }
         }
 
         // Apply controller settings to container
@@ -334,46 +341,48 @@ object ContainerUtils {
             else -> "en_US.utf8"
         }
     }
-
-    fun getContainerId(appId: Int): Int {
-        // TODO: set up containers for each appId+depotId combo (intent extra "container_id")
+    
+    fun getContainerId(appId: String): String {
         return appId
     }
 
-    fun hasContainer(context: Context, appId: Int): Boolean {
-        val containerId = getContainerId(appId)
+    fun hasContainer(context: Context, libraryItem: LibraryItem): Boolean {
         val containerManager = ContainerManager(context)
-        return containerManager.hasContainer(containerId)
+        return containerManager.hasContainer(libraryItem.appId)
     }
-
-    fun getContainer(context: Context, appId: Int): Container {
-        val containerId = getContainerId(appId)
-
+    
+    fun getContainer(context: Context, libraryItem: LibraryItem): Container {
         val containerManager = ContainerManager(context)
-        return if (containerManager.hasContainer(containerId)) {
-            containerManager.getContainerById(containerId)
+        return if (containerManager.hasContainer(libraryItem.appId)) {
+            containerManager.getContainerById(libraryItem.appId)
         } else {
-            throw Exception("Container does not exist for game $appId")
+            throw Exception("Container does not exist for game ${libraryItem.appId}")
         }
     }
 
     private fun createNewContainer(
         context: Context,
-        appId: Int,
-        containerId: Int,
+        libraryItem: LibraryItem,
         containerManager: ContainerManager,
         customConfig: ContainerData? = null,
     ): Container {
         // set up container drives to include app
         val defaultDrives = PrefManager.drives
-        val appDirPath = SteamService.getAppDirPath(appId)
-        val drive: Char = Container.getNextAvailableDriveLetter(defaultDrives)
-        val drives = "$defaultDrives$drive:$appDirPath"
+        val drives = if (libraryItem.gameSource == app.gamenative.data.GameSource.STEAM) {
+            val appDirPath = SteamService.getAppDirPath(libraryItem.steamAppId)
+            val drive: Char = Container.getNextAvailableDriveLetter(defaultDrives)
+            "$defaultDrives$drive:$appDirPath"
+        } else {
+            // For GOG games, include the GOG games directory
+            val gogDirPath = "/data/data/app.gamenative/storage/gog_games"
+            val drive: Char = Container.getNextAvailableDriveLetter(defaultDrives)
+            "$defaultDrives$drive:$gogDirPath"
+        }
         Timber.d("Prepared container drives: $drives")
 
         val data = JSONObject()
-        data.put("name", "container_$containerId")
-        val container = containerManager.createContainerFuture(containerId, data).get()
+        data.put("name", "container_${libraryItem.appId}")
+        val container = containerManager.createContainerFuture(libraryItem.appId, data).get()
 
         val containerData = if (customConfig != null) {
             // Use custom config, but ensure drives are set if not specified
@@ -422,18 +431,17 @@ object ContainerUtils {
         return container
     }
 
-    fun getOrCreateContainer(context: Context, appId: Int): Container {
-        val containerId = getContainerId(appId)
+    fun getOrCreateContainer(context: Context, libraryItem: LibraryItem): Container {
         val containerManager = ContainerManager(context)
 
-        return if (containerManager.hasContainer(containerId)) {
-            containerManager.getContainerById(containerId)
+        return if (containerManager.hasContainer(libraryItem.appId)) {
+            containerManager.getContainerById(libraryItem.appId)
         } else {
-            createNewContainer(context, appId, containerId, containerManager)
+            createNewContainer(context, libraryItem, containerManager)
         }
     }
 
-    fun getOrCreateContainerWithOverride(context: Context, appId: Int): Container {
+    fun getOrCreateContainerWithOverride(context: Context, appId: String): Container {
         val containerId = getContainerId(appId)
         val containerManager = ContainerManager(context)
 
@@ -474,7 +482,16 @@ object ContainerUtils {
                 null
             }
 
-            createNewContainer(context, appId, containerId, containerManager, overrideConfig)
+            // Create a LibraryItem for Steam games for backward compatibility
+            val libraryItem = LibraryItem(
+                index = 0,
+                appId = containerId,
+                name = "Steam Game $appId",
+                iconHash = "",
+                isShared = false,
+                gameSource = app.gamenative.data.GameSource.STEAM
+            )
+            createNewContainer(context, libraryItem, containerManager, overrideConfig)
         }
     }
 
@@ -625,7 +642,7 @@ object ContainerUtils {
     /**
      * Deletes the container associated with the given appId, if it exists.
      */
-    fun deleteContainer(context: Context, appId: Int) {
+    fun deleteContainer(context: Context, appId: String) {
         val containerId = getContainerId(appId)
         val manager = ContainerManager(context)
         if (manager.hasContainer(containerId)) {

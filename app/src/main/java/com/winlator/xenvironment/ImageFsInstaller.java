@@ -226,10 +226,21 @@ public abstract class ImageFsInstaller {
         try {
             for (Container container : containerManager.getContainers()) {
                 try {
-                    String mappedPath = SteamService.Companion.getAppDirPath(container.id);
-                    MarkerUtils.INSTANCE.removeMarker(mappedPath, Marker.STEAM_DLL_REPLACED);
-                    MarkerUtils.INSTANCE.removeMarker(mappedPath, Marker.STEAM_DLL_RESTORED);
-                    Log.i("ImageFsInstaller", "Cleared markers for container: " + container.getName() + " (ID: " + container.id + ")");
+                    // Only clear Steam markers for Steam containers
+                    if (container.id.startsWith("steam_")) {
+                        String steamAppIdStr = container.id.replace("steam_", "");
+                        try {
+                            int steamAppId = Integer.parseInt(steamAppIdStr);
+                            String mappedPath = SteamService.Companion.getAppDirPath(steamAppId);
+                            MarkerUtils.INSTANCE.removeMarker(mappedPath, Marker.STEAM_DLL_REPLACED);
+                            MarkerUtils.INSTANCE.removeMarker(mappedPath, Marker.STEAM_DLL_RESTORED);
+                            Log.i("ImageFsInstaller", "Cleared Steam markers for container: " + container.getName() + " (ID: " + container.id + ")");
+                        } catch (NumberFormatException e) {
+                            Log.w("ImageFsInstaller", "Invalid Steam app ID in container ID " + container.id + ": " + e.getMessage());
+                        }
+                    } else {
+                        Log.d("ImageFsInstaller", "Skipping non-Steam container: " + container.getName() + " (ID: " + container.id + ")");
+                    }
                 } catch (Exception e) {
                     Log.w("ImageFsInstaller", "Failed to clear markers for container ID " + container.id + ": " + e.getMessage());
                 }

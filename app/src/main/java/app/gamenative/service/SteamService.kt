@@ -988,7 +988,7 @@ class SteamService : Service(), IChallengeUrlChanged {
         }
 
         suspend fun forceSyncUserFiles(
-            appId: Int,
+            appId: String,
             prefixToPath: (String) -> String,
             preferredSave: SaveLocation = SaveLocation.None,
             parentScope: CoroutineScope = CoroutineScope(Dispatchers.IO),

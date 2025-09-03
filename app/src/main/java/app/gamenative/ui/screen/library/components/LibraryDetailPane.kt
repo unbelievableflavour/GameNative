@@ -30,7 +30,7 @@ internal fun LibraryDetailPane(
     onBack: () -> Unit,
 ) {
     Surface {
-        if (game.appId == SteamService.INVALID_APP_ID && game.gameSource == GameSource.STEAM) {
+        if (game.steamAppId == SteamService.INVALID_APP_ID && game.gameSource == GameSource.STEAM) {
             // Simply use the regular LibraryListPane with empty data
             val listState = rememberLazyListState()
             val sheetState = rememberModalBottomSheetState()
@@ -81,7 +81,7 @@ private fun Preview_LibraryDetailPane() {
         LibraryDetailPane(
             game = LibraryItem(
                 index = 0,
-                appId = Int.MAX_VALUE,
+                appId = "steam_${Int.MAX_VALUE}",
                 name = "Test Game",
                 iconHash = "",
                 isShared = false,

@@ -155,8 +155,8 @@ fun XServerScreen(
     var taskAffinityMaskWoW64 = 0
 
     val xServerState = rememberSaveable(stateSaver = XServerState.Saver) {
-        if (ContainerUtils.hasContainer(context, appId)) {
-            val container = ContainerUtils.getContainer(context, appId)
+        if (ContainerUtils.hasContainer(context, libraryItem)) {
+            val container = ContainerUtils.getContainer(context, libraryItem)
             // Emulation wiring moved to InputControlsView init block
             mutableStateOf(
                 XServerState(
@@ -191,11 +191,15 @@ fun XServerScreen(
     var keyboard by remember { mutableStateOf<Keyboard?>(null) }
     // var pointerEventListener by remember { mutableStateOf<Callback<MotionEvent>?>(null) }
 
-    val appLaunchInfo = SteamService.getAppInfoOf(appId)?.let { appInfo ->
-        SteamService.getWindowsLaunchInfos(appId).firstOrNull()
-    }
+    val appLaunchInfo = if (libraryItem.gameSource == GameSource.STEAM) {
+        SteamService.getAppInfoOf(libraryItem.steamAppId)?.let { appInfo ->
+            SteamService.getWindowsLaunchInfos(libraryItem.steamAppId).firstOrNull()
+        }
+    } else null
 
-    var currentAppInfo = SteamService.getAppInfoOf(appId)
+    var currentAppInfo = if (libraryItem.gameSource == GameSource.STEAM) {
+        SteamService.getAppInfoOf(libraryItem.steamAppId)
+    } else null
 
     var xServerView: XServerView? by remember {
         val result = mutableStateOf<XServerView?>(null)
@@ -258,7 +262,7 @@ fun XServerScreen(
                                 PostHog.capture(event = "onscreen_controller_enabled")
                                 val profiles = PluviaApp.inputControlsManager?.getProfiles(false) ?: listOf()
                                 if (profiles.isNotEmpty()) {
-                                    val container = ContainerUtils.getContainer(context, appId)
+                                    val container = ContainerUtils.getContainer(context, libraryItem)
                                     val targetProfile = if (container.isEmulateKeyboardMouse()) {
                                         val profileName = container.id.toString()
                                         profiles.firstOrNull { it.name == profileName }
@@ -305,7 +309,7 @@ fun XServerScreen(
 
             var handled = false
             if (isGamepad) {
-                val emulate = try { ContainerUtils.getContainer(context, appId).isEmulateKeyboardMouse() } catch (_: Exception) { false }
+                val emulate = try { ContainerUtils.getContainer(context, libraryItem).isEmulateKeyboardMouse() } catch (_: Exception) { false }
                 if (emulate) {
                     handled = PluviaApp.inputControlsView?.onKeyEvent(it.event) == true
                     if (!handled) handled = xServerView!!.getxServer().winHandler.onKeyEvent(it.event)
@@ -324,7 +328,7 @@ fun XServerScreen(
 
             var handled = false
             if (isGamepad) {
-                val emulate = try { ContainerUtils.getContainer(context, appId).isEmulateKeyboardMouse() } catch (_: Exception) { false }
+                val emulate = try { ContainerUtils.getContainer(context, libraryItem).isEmulateKeyboardMouse() } catch (_: Exception) { false }
                 if (emulate) {
                     handled = PluviaApp.inputControlsView?.onGenericMotionEvent(it.event) == true
                     if (!handled) handled = xServerView!!.getxServer().winHandler.onGenericMotionEvent(it.event)
@@ -517,7 +521,7 @@ fun XServerScreen(
 
                 if (PluviaApp.xEnvironment == null) {
                     val containerManager = ContainerManager(context)
-                    val container = ContainerUtils.getContainer(context, appId)
+                    val container = ContainerUtils.getContainer(context, libraryItem)
                     // Configure WinHandler with container's input API settings
                     val handler = getxServer().winHandler
                     if (container.inputType !in 0..3) {
@@ -629,7 +633,7 @@ fun XServerScreen(
                 val profiles = PluviaApp.inputControlsManager?.getProfiles(false) ?: listOf()
                 PrefManager.init(context)
                 if (profiles.isNotEmpty()) {
-                    val container = ContainerUtils.getContainer(context, appId)
+                    val container = ContainerUtils.getContainer(context, libraryItem)
                     val targetProfile = if (container.isEmulateKeyboardMouse()) {
                         val profileName = container.id.toString()
                         profiles.firstOrNull { it.name == profileName }
@@ -651,7 +655,7 @@ fun XServerScreen(
             // Add InputControlsView on top of XServerView
             frameLayout.addView(icView)
             hideInputControls()
-            val container = ContainerUtils.getContainer(context, appId)
+            val container = ContainerUtils.getContainer(context, libraryItem)
 
             // If emulation is enabled, select the per-container profile (named by container id)
             if (container.isEmulateKeyboardMouse()) {
@@ -1086,7 +1090,7 @@ private suspend fun setupXEnvironment(
         guestProgramLauncherComponent.box86Preset = container.box86Preset
         guestProgramLauncherComponent.box64Preset = container.box64Preset
         guestProgramLauncherComponent.setPreUnpack {
-        unpackExecutableFile(context, container.isNeedsUnpacking, container, appId, appLaunchInfo, onGameLaunchError)
+        unpackExecutableFile(context, container.isNeedsUnpacking, container, libraryItem.steamAppId, appLaunchInfo, onGameLaunchError)
         }
     }
 
@@ -1287,15 +1291,15 @@ private suspend fun getWineStartCommand(
         if (container.isLaunchRealSteam()) {
             // Launch Steam with the applaunch parameter to start the game
             "\"C:\\\\Program Files (x86)\\\\Steam\\\\steam.exe\" -silent -vgui -tcp " +
-                    "-nobigpicture -nofriendsui -nochatui -nointro -applaunch $appId"
+                    "-nobigpicture -nofriendsui -nochatui -nointro -applaunch ${libraryItem.steamAppId}"
         } else {
             // Original logic for direct game launch
-            val appDirPath = SteamService.getAppDirPath(appId)
+            val appDirPath = SteamService.getAppDirPath(libraryItem.steamAppId)
             var executablePath = ""
             if (container.executablePath.isNotEmpty()) {
                 executablePath = container.executablePath
             } else {
-                executablePath = SteamService.getInstalledExe(appId)
+                executablePath = SteamService.getInstalledExe(libraryItem.steamAppId)
                 container.executablePath = executablePath
                 container.saveData()
             }

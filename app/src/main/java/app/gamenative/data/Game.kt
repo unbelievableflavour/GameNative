@@ -43,7 +43,7 @@ data class SteamGameWrapper(
     
     override fun toLibraryItem(index: Int): LibraryItem = LibraryItem(
         index = index,
-        appId = steamApp.id,
+        appId = "steam_${steamApp.id}", // Platform-prefixed ID
         name = steamApp.name,
         iconHash = steamApp.clientIconHash,
         isShared = isShared,
@@ -69,7 +69,7 @@ data class GOGGameWrapper(
     
     override fun toLibraryItem(index: Int): LibraryItem = LibraryItem(
         index = index,
-        appId = 0, // GOG games don't have Steam app IDs
+        appId = "gog_${gogGame.id}", // Platform-prefixed ID
         name = gogGame.title,
         iconHash = "",
         isShared = false,

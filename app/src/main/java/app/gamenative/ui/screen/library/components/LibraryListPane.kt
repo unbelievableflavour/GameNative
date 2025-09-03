@@ -283,7 +283,7 @@ private fun Preview_LibraryListPane() {
                     val item = fakeAppInfo(idx)
                     LibraryItem(
                         index = idx,
-                        appId = item.id,
+                        appId = "steam_${item.id}",
                         name = item.name,
                         iconHash = item.iconHash,
                         isShared = idx % 2 == 0,

@@ -72,7 +72,11 @@ class SteamGameManager @Inject constructor() : GameManager {
      */
     override suspend fun installGame(context: Context, gameId: String, gameName: String): Result<DownloadInfo?> = withContext(Dispatchers.IO) {
         try {
-            val appId = gameId.toInt()
+            val appId = if (gameId.startsWith("steam_")) {
+                gameId.removePrefix("steam_").toInt()
+            } else {
+                gameId.toInt() // fallback for legacy numeric IDs
+            }
             val downloadInfo = SteamService.downloadApp(appId)
             if (downloadInfo != null) {
                 Result.success(downloadInfo)
@@ -90,7 +94,11 @@ class SteamGameManager @Inject constructor() : GameManager {
      */
     override suspend fun deleteGame(context: Context, gameId: String, gameName: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val appId = gameId.toInt()
+            val appId = if (gameId.startsWith("steam_")) {
+                gameId.removePrefix("steam_").toInt()
+            } else {
+                gameId.toInt() // fallback for legacy numeric IDs
+            }
             val success = SteamService.deleteApp(appId)
             if (success) {
                 Result.success(Unit)
@@ -108,7 +116,11 @@ class SteamGameManager @Inject constructor() : GameManager {
      */
     override suspend fun isGameInstalled(context: Context, gameId: String, gameName: String): Boolean {
         return try {
-            val appId = gameId.toInt()
+            val appId = if (gameId.startsWith("steam_")) {
+                gameId.removePrefix("steam_").toInt()
+            } else {
+                gameId.toInt() // fallback for legacy numeric IDs
+            }
             SteamService.isAppInstalled(appId)
         } catch (e: Exception) {
             false
@@ -120,7 +132,11 @@ class SteamGameManager @Inject constructor() : GameManager {
      */
     override fun getDownloadInfo(gameId: String): DownloadInfo? {
         return try {
-            val appId = gameId.toInt()
+            val appId = if (gameId.startsWith("steam_")) {
+                gameId.removePrefix("steam_").toInt()
+            } else {
+                gameId.toInt() // fallback for legacy numeric IDs
+            }
             SteamService.getAppDownloadInfo(appId)
         } catch (e: Exception) {
             null
@@ -132,7 +148,11 @@ class SteamGameManager @Inject constructor() : GameManager {
      */
     override fun hasPartialDownload(gameId: String): Boolean {
         return try {
-            val appId = gameId.toInt()
+            val appId = if (gameId.startsWith("steam_")) {
+                gameId.removePrefix("steam_").toInt()
+            } else {
+                gameId.toInt() // fallback for legacy numeric IDs
+            }
             SteamService.hasPartialDownload(appId)
         } catch (e: Exception) {
             false
@@ -144,7 +164,11 @@ class SteamGameManager @Inject constructor() : GameManager {
      */
     override suspend fun resumeDownload(context: Context, gameId: String, gameName: String): Result<DownloadInfo?> = withContext(Dispatchers.IO) {
         try {
-            val appId = gameId.toInt()
+            val appId = if (gameId.startsWith("steam_")) {
+                gameId.removePrefix("steam_").toInt()
+            } else {
+                gameId.toInt() // fallback for legacy numeric IDs
+            }
             if (hasPartialDownload(gameId)) {
                 val downloadInfo = SteamService.downloadApp(appId)
                 if (downloadInfo != null) {
@@ -170,7 +194,11 @@ class SteamGameManager @Inject constructor() : GameManager {
         preferredSave: Int?
     ): PostSyncInfo = withContext(Dispatchers.IO) {
         try {
-            val appId = gameId.toInt()
+            val appId = if (gameId.startsWith("steam_")) {
+                gameId.removePrefix("steam_").toInt()
+            } else {
+                gameId.toInt() // fallback for legacy numeric IDs
+            }
             Timber.i("Starting Steam game launch with save sync for $gameName (appId: $appId)")
             
             // Use existing Steam save sync logic

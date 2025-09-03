@@ -645,7 +645,7 @@ fun PluviaMain(
             ) {
                 HomeScreen(
                     onClickPlay = { libraryItem, asContainer ->
-                        viewModel.setLaunchedAppId(libraryItem.appId)
+                        viewModel.setLaunchedLibraryItem(libraryItem)
                         viewModel.setBootToContainer(asContainer)
                         preLaunchApp(
                             context = context,
@@ -701,7 +701,7 @@ fun PluviaMain(
                 val libraryItem = state.launchedLibraryItem ?: run {
                     // Fallback for cases where we only have appId
                     LibraryItem(
-                        appId = state.launchedAppId,
+                        appId = "steam_${state.launchedAppId}",
                         name = "Unknown Game",
                         gameSource = if (state.launchedAppId == 0) GameSource.GOG else GameSource.STEAM
                     )
@@ -716,10 +716,10 @@ fun PluviaMain(
                         }
                     },
                     onWindowMapped = { context, window ->
-                        viewModel.onWindowMapped(context, window, libraryItem.appId)
+                        viewModel.onWindowMapped(context, window, libraryItem.steamAppId)
                     },
                     onExit = {
-                        viewModel.exitSteamApp(context, libraryItem.appId)
+                        viewModel.exitSteamApp(context, libraryItem.steamAppId)
                     },
                     onGameLaunchError = { error ->
                         viewModel.onGameLaunchError(error)
@@ -772,9 +772,9 @@ fun preLaunchApp(
         // TODO: combine somehow with container creation in HomeLibraryAppScreen
         val containerManager = ContainerManager(context)
         val container = if (useTemporaryOverride) {
-            ContainerUtils.getOrCreateContainerWithOverride(context, libraryItem.appId)
+            ContainerUtils.getOrCreateContainerWithOverride(context, libraryItem.steamAppId)
         } else {
-            ContainerUtils.getOrCreateContainer(context, libraryItem.appId)
+            ContainerUtils.getOrCreateContainer(context, libraryItem)
         }
         // must activate container before downloading save files
         containerManager.activateContainer(container)
@@ -1000,7 +1000,7 @@ suspend fun createLibraryItemFromAppId(context: Context, appId: Int): LibraryIte
     val steamAppInfo = SteamService.getAppInfoOf(appId)
     if (steamAppInfo != null) {
         return LibraryItem(
-            appId = appId,
+            appId = "steam_$appId",
             name = steamAppInfo.name,
             iconHash = steamAppInfo.clientIconHash,
             gameSource = GameSource.STEAM
@@ -1014,7 +1014,7 @@ suspend fun createLibraryItemFromAppId(context: Context, appId: Int): LibraryIte
         // This is likely a GOG game, but we need more context
         // For now, create a minimal LibraryItem
         return LibraryItem(
-            appId = 0,
+            appId = "gog_unknown",
             name = "GOG Game",
             gameSource = GameSource.GOG,
             gogGameId = "unknown"
@@ -1023,7 +1023,7 @@ suspend fun createLibraryItemFromAppId(context: Context, appId: Int): LibraryIte
     
     // Fallback to Steam with unknown name
     return LibraryItem(
-        appId = appId,
+        appId = "steam_$appId",
         name = "Unknown Game",
         gameSource = GameSource.STEAM
     )

@@ -56,7 +56,7 @@ internal fun AppItem(
     gameManagerViewModel: GameManagerViewModel,
 ) {
     // Determine download and install state
-    val downloadInfo = remember(appInfo.appId) { SteamService.getAppDownloadInfo(appInfo.appId) }
+    val downloadInfo = remember(appInfo.appId) { SteamService.getAppDownloadInfo(appInfo.steamAppId) }
     val downloadProgress = remember(downloadInfo) { downloadInfo?.getProgress() ?: 0f }
     val isDownloading = downloadInfo != null && downloadProgress < 1f
     
@@ -68,7 +68,7 @@ internal fun AppItem(
     val context = LocalContext.current
     LaunchedEffect(appInfo.appId, appInfo.gameSource) {
         isInstalled = when (appInfo.gameSource) {
-            GameSource.STEAM -> SteamService.isAppInstalled(appInfo.appId)
+            GameSource.STEAM -> SteamService.isAppInstalled(appInfo.steamAppId)
             GameSource.GOG -> {
                 // Use GameManagerViewModel to check GOG installation status
                 gameManagerViewModel.isGameInstalled(context, appInfo)
@@ -83,7 +83,7 @@ internal fun AppItem(
             appSizeOnDisk = "..."
             when (appInfo.gameSource) {
                 GameSource.STEAM -> {
-                    DownloadService.getSizeOnDiskDisplay(appInfo.appId) { appSizeOnDisk = it }
+                    DownloadService.getSizeOnDiskDisplay(appInfo.steamAppId) { appSizeOnDisk = it }
                 }
                 GameSource.GOG -> {
                     // For GOG games, calculate size from install directory
@@ -239,7 +239,7 @@ private fun Preview_AppItem() {
                         val item = fakeAppInfo(idx)
                         LibraryItem(
                             index = idx,
-                            appId = item.id,
+                            appId = "steam_${item.id}",
                             name = item.name,
                             iconHash = item.iconHash,
                             isShared = idx % 2 == 0,
