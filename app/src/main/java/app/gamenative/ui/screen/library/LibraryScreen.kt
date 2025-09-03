@@ -45,21 +45,24 @@ import app.gamenative.ui.model.LibraryViewModel
 import app.gamenative.ui.screen.library.components.LibraryDetailPane
 import app.gamenative.ui.screen.library.components.LibraryListPane
 import app.gamenative.ui.theme.PluviaTheme
+import app.gamenative.service.GOG.SyncProgress
 import java.util.EnumSet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeLibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
-    onClickPlay: (Int, Boolean) -> Unit,
+    onClickPlay: (LibraryItem, Boolean) -> Unit,
     onNavigateRoute: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val gogSyncProgress by viewModel.gogSyncProgress.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     LibraryScreenContent(
         state = state,
+        gogSyncProgress = gogSyncProgress,
         listState = viewModel.listState,
         sheetState = sheetState,
         onFilterChanged = viewModel::onFilterChanged,
@@ -77,6 +80,7 @@ fun HomeLibraryScreen(
 @Composable
 private fun LibraryScreenContent(
     state: LibraryState,
+    gogSyncProgress: SyncProgress,
     listState: LazyListState,
     sheetState: SheetState,
     onFilterChanged: (AppFilter) -> Unit,
@@ -84,7 +88,7 @@ private fun LibraryScreenContent(
     onModalBottomSheet: (Boolean) -> Unit,
     onIsSearching: (Boolean) -> Unit,
     onSearchQuery: (String) -> Unit,
-    onClickPlay: (Int, Boolean) -> Unit,
+    onClickPlay: (LibraryItem, Boolean) -> Unit,
     onNavigateRoute: (String) -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -121,7 +125,7 @@ private fun LibraryScreenContent(
             LibraryDetailPane(
                 game = selectedGame!!,
                 onBack = { selectedGame = null },
-                onClickPlay = { onClickPlay(selectedGame!!.appId, it) },
+                onClickPlay = { onClickPlay(selectedGame!!, it) },
             )
         }
     }
@@ -165,6 +169,7 @@ private fun Preview_LibraryScreenContent() {
         LibraryScreenContent(
             listState = rememberLazyListState(),
             state = state,
+            gogSyncProgress = SyncProgress(), // Default empty progress for preview
             sheetState = sheetState,
             onIsSearching = {},
             onSearchQuery = {},

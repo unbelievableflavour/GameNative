@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import app.gamenative.data.DownloadInfo
 import app.gamenative.data.LibraryItem
 import app.gamenative.data.GameSource
+import app.gamenative.data.PostSyncInfo
 import app.gamenative.service.GameManager
 import app.gamenative.service.GOG.GOGGameManager
 import app.gamenative.service.Steam.SteamGameManager
@@ -54,5 +55,22 @@ class GameManagerViewModel @Inject constructor(
 
     fun hasPartialDownload(game: LibraryItem): Boolean {
         return getManagerForGame(game).hasPartialDownload(getGameId(game))
+    }
+
+    suspend fun launchGameWithSaveSync(
+        context: Context,
+        game: LibraryItem,
+        parentScope: kotlinx.coroutines.CoroutineScope,
+        ignorePendingOperations: Boolean = false,
+        preferredSave: Int? = null
+    ): PostSyncInfo {
+        return getManagerForGame(game).launchGameWithSaveSync(
+            context = context,
+            gameId = getGameId(game),
+            gameName = game.name,
+            parentScope = parentScope,
+            ignorePendingOperations = ignorePendingOperations,
+            preferredSave = preferredSave
+        )
     }
 }

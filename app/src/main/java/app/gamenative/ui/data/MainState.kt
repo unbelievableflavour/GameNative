@@ -2,6 +2,7 @@ package app.gamenative.ui.data
 
 import app.gamenative.enums.AppTheme
 import app.gamenative.ui.screen.PluviaScreen
+import app.gamenative.data.LibraryItem
 import com.materialkolor.PaletteStyle
 
 data class MainState(
@@ -16,6 +17,7 @@ data class MainState(
     val hasCrashedLastStart: Boolean = false,
     val isSteamConnected: Boolean = false,
     val launchedAppId: Int = 0,
+    val launchedLibraryItem: LibraryItem? = null,
     val bootToContainer: Boolean = false,
     val showBootingSplash: Boolean = false,
 )

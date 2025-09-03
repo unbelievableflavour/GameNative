@@ -31,10 +31,17 @@ class AccountManagementViewModel @Inject constructor(
         }
     }
 
-    fun syncGOGLibraryAsync(context: Context, onResult: (Result<Int>) -> Unit) {
+    fun syncGOGLibraryAsync(context: Context, clearExisting: Boolean = true, onResult: (Result<Int>) -> Unit) {
         viewModelScope.launch {
-            val result = syncGOGLibrary(context)
-            onResult(result)
+            // Clear existing games and start background sync
+            if (clearExisting) {
+                gogLibraryManager.clearLibrary()
+            }
+            gogLibraryManager.startBackgroundSync(context, clearExisting)
+            
+            // For UI feedback, return success immediately since sync runs in background
+            val gameCount = gogLibraryManager.getLocalGameCount()
+            onResult(Result.success(gameCount))
         }
     }
 }

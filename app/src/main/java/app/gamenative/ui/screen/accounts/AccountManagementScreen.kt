@@ -213,10 +213,9 @@ fun AccountManagementScreen(
                                 gogLibraryTestInProgress = true
                                 gogLibraryTestResult = null
                                 
-                                viewModel.syncGOGLibraryAsync(context) { result ->
+                                viewModel.syncGOGLibraryAsync(context, clearExisting = true) { result ->
                                     if (result.isSuccess) {
-                                        val gameCount = result.getOrThrow()
-                                        gogLibraryTestResult = "Success! Synced your GOG library. $gameCount games are now available in the main library."
+                                        gogLibraryTestResult = "Background sync started! Games will appear in the library progressively. Check the main library screen to see them loading."
                                     } else {
                                         gogLibraryTestResult = "Failed: ${result.exceptionOrNull()?.message ?: "Unknown error"}"
                                     }
@@ -234,7 +233,7 @@ fun AccountManagementScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
-                        Text(if (gogLibraryTestInProgress) "Syncing..." else "Sync Library")
+                        Text(if (gogLibraryTestInProgress) "Starting..." else "Clear & Sync Library")
                     }
                     
                     // Show test result

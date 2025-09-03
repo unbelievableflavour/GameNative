@@ -2,6 +2,8 @@ package app.gamenative.ui.screen.xserver
 
 import android.app.Activity
 import android.content.Context
+import app.gamenative.data.LibraryItem
+import app.gamenative.data.GameSource
 import android.os.Build
 import android.view.View
 import android.view.WindowInsets
@@ -98,6 +100,7 @@ import com.winlator.xserver.XServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -120,7 +123,7 @@ import com.winlator.PrefManager as WinlatorPrefManager
 @OptIn(ExperimentalComposeUiApi::class)
 fun XServerScreen(
     lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current,
-    appId: Int,
+    libraryItem: LibraryItem,
     bootToContainer: Boolean,
     navigateBack: () -> Unit,
     onExit: () -> Unit,
@@ -128,7 +131,8 @@ fun XServerScreen(
     onWindowUnmapped: ((Window) -> Unit)? = null,
     onGameLaunchError: ((String) -> Unit)? = null,
 ) {
-    Timber.i("Starting up XServerScreen")
+    Timber.i("Starting up XServerScreen for ${libraryItem.gameSource} game: ${libraryItem.name}")
+    val appId = libraryItem.appId // For backward compatibility with existing code
     val context = LocalContext.current
     val view = LocalView.current
     val imm = remember(context) {
@@ -594,17 +598,19 @@ fun XServerScreen(
                         envVars,
                     )
                     changeWineAudioDriver(xServerState.value.audioDriver, container, ImageFs.find(context))
-                    PluviaApp.xEnvironment = setupXEnvironment(
-                        context,
-                        appId,
-                        bootToContainer,
-                        xServerState,
-                        envVars,
-                        container,
-                        appLaunchInfo,
-                        xServerView!!.getxServer(),
-                        onGameLaunchError,
-                    )
+                    PluviaApp.xEnvironment = runBlocking {
+                        setupXEnvironment(
+                            context,
+                            libraryItem,
+                            bootToContainer,
+                            xServerState,
+                            envVars,
+                            container,
+                            appLaunchInfo,
+                            xServerView!!.getxServer(),
+                            onGameLaunchError,
+                        )
+                    }
                 }
             }
             PluviaApp.xServerView = xServerView;
@@ -955,9 +961,9 @@ private fun shiftXEnvironmentToContext(
 
     return environment
 }
-private fun setupXEnvironment(
+private suspend fun setupXEnvironment(
     context: Context,
-    appId: Int,
+    libraryItem: LibraryItem,
     bootToContainer: Boolean,
     xServerState: MutableState<XServerState>,
     // xServerViewModel: XServerViewModel,
@@ -969,6 +975,7 @@ private fun setupXEnvironment(
     xServer: XServer,
     onGameLaunchError: ((String) -> Unit)? = null,
 ): XEnvironment {
+    val appId = libraryItem.appId // For backward compatibility
     val lc_all = container!!.lC_ALL
     val imageFs = ImageFs.find(context)
     Timber.i("ImageFs paths:")
@@ -1057,7 +1064,7 @@ private fun setupXEnvironment(
         val wow64Mode = container.isWoW64Mode
         //            String guestExecutable = wineInfo.getExecutable(this, wow64Mode)+" explorer /desktop=shell,"+xServer.screenInfo+" "+getWineStartCommand();
         val guestExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " +
-            getWineStartCommand(appId, container, bootToContainer, appLaunchInfo, envVars, guestProgramLauncherComponent) +
+            getWineStartCommand(libraryItem, container, bootToContainer, appLaunchInfo, envVars, guestProgramLauncherComponent) +
             (if (container.execArgs.isNotEmpty()) " " + container.execArgs else "")
         guestProgramLauncherComponent.isWoW64Mode = wow64Mode
         guestProgramLauncherComponent.guestExecutable = guestExecutable
@@ -1079,7 +1086,7 @@ private fun setupXEnvironment(
         guestProgramLauncherComponent.box86Preset = container.box86Preset
         guestProgramLauncherComponent.box64Preset = container.box64Preset
         guestProgramLauncherComponent.setPreUnpack {
-            unpackExecutableFile(context, container.isNeedsUnpacking, container, appId, appLaunchInfo, onGameLaunchError)
+        unpackExecutableFile(context, container.isNeedsUnpacking, container, appId, appLaunchInfo, onGameLaunchError)
         }
     }
 
@@ -1177,20 +1184,94 @@ private fun setupXEnvironment(
     )
     return environment
 }
-private fun getWineStartCommand(
-    appId: Int,
+private suspend fun getWineStartCommand(
+    libraryItem: LibraryItem,
     container: Container,
     bootToContainer: Boolean,
     appLaunchInfo: LaunchInfo?,
     envVars: EnvVars,
     guestProgramLauncherComponent: GuestProgramLauncherComponent,
 ): String {
+    val appId = libraryItem.appId // For backward compatibility
     val tempDir = File(container.getRootDir(), ".wine/drive_c/windows/temp")
     FileUtils.clear(tempDir)
 
     Timber.tag("XServerScreen").d("appLaunchInfo is $appLaunchInfo")
     val args = if (bootToContainer || appLaunchInfo == null) {
-        "\"wfm.exe\""
+        // Check if this is a GOG game that should launch directly
+        if (libraryItem.gameSource == GameSource.GOG && libraryItem.gogGameId != null) {
+            try {
+                // Find GOG game directory
+                val gogGamesDir = "/data/user/0/app.gamenative/files/storage/gog_games"
+                Timber.i("Looking for GOG game '${libraryItem.name}' in directory: $gogGamesDir")
+                
+                val gogGamesDirFile = File(gogGamesDir)
+                if (!gogGamesDirFile.exists()) {
+                    Timber.w("GOG games directory does not exist: $gogGamesDir")
+                    "\"wfm.exe\""
+                } else {
+                    val availableDirs = gogGamesDirFile.listFiles()?.map { it.name } ?: emptyList()
+                    Timber.i("Available directories in GOG games dir: $availableDirs")
+                    
+                    val gameDir = gogGamesDirFile.listFiles()?.find { dir ->
+                        dir.isDirectory && dir.name.contains(libraryItem.name, ignoreCase = true)
+                    }
+                    
+                    Timber.i("Found matching game directory: ${gameDir?.name}")
+                    
+                    if (gameDir != null) {
+                        // Look for game_* subdirectory
+                        val gameSubDirs = gameDir.listFiles()?.filter { it.isDirectory }?.map { it.name } ?: emptyList()
+                        Timber.i("Available subdirectories in '${gameDir.name}': $gameSubDirs")
+                        
+                        val gameSubDir = gameDir.listFiles()?.find { it.isDirectory && it.name.startsWith("game_") }
+                        Timber.i("Found game subdirectory: ${gameSubDir?.name}")
+                        
+                        if (gameSubDir != null) {
+                            // Find the main executable
+                            val exeFiles = gameSubDir.walkTopDown()
+                                .filter { it.isFile && it.name.endsWith(".exe", ignoreCase = true) }
+                                .filter { !it.name.equals("unins000.exe", ignoreCase = true) }
+                                .toList()
+                            
+                            Timber.i("Found ${exeFiles.size} executable files: ${exeFiles.map { it.name }}")
+                            
+                            val mainExe = exeFiles.maxByOrNull { it.length() }
+                            Timber.i("Selected main executable: ${mainExe?.name} (${mainExe?.length()} bytes)")
+                            
+                            if (mainExe != null) {
+                                // Calculate the Wine path
+                                val relativePath = mainExe.relativeTo(File(gogGamesDir)).path.replace('\\', '/')
+                                val executableDir = gameSubDir.absolutePath
+                                guestProgramLauncherComponent.workingDir = File(executableDir)
+                                
+                                Timber.i("GOG game executable relative path: $relativePath")
+                                Timber.i("GOG game working directory: $executableDir")
+                                Timber.i("Full Wine command will be: \"E:/${relativePath}\"")
+                                
+                                // Use E: drive for GOG games
+                                envVars.put("WINEPATH", "E:/${relativePath.substringBeforeLast("/", "")}")
+                                "\"E:/${relativePath}\""
+                            } else {
+                                Timber.w("No executable found for GOG game ${libraryItem.name}, opening file manager")
+                                "\"wfm.exe\""
+                            }
+                        } else {
+                            Timber.w("No game subdirectory found for GOG game ${libraryItem.name}, opening file manager")
+                            "\"wfm.exe\""
+                        }
+                    } else {
+                        Timber.w("Game directory not found for GOG game ${libraryItem.name}, opening file manager")
+                        "\"wfm.exe\""
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error launching GOG game ${libraryItem.name}, opening file manager")
+                "\"wfm.exe\""
+            }
+        } else {
+            "\"wfm.exe\""
+        }
     } else {
         // Check if we should launch through real Steam
         if (container.isLaunchRealSteam()) {

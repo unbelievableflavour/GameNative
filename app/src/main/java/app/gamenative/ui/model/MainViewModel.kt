@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import app.gamenative.PluviaApp
 import app.gamenative.PrefManager
 import app.gamenative.data.GameProcessInfo
+import app.gamenative.data.LibraryItem
+import app.gamenative.data.GameSource
 import app.gamenative.di.IAppTheme
 import app.gamenative.enums.AppTheme
 import app.gamenative.enums.LoginResult
@@ -21,6 +23,7 @@ import app.gamenative.utils.SteamUtils
 import com.materialkolor.PaletteStyle
 import com.winlator.xserver.Window
 import dagger.hilt.android.lifecycle.HiltViewModel
+import app.gamenative.service.SteamService as SteamServiceImport
 import `in`.dragonbra.javasteam.steam.handlers.steamapps.AppProcessInfo
 import kotlinx.coroutines.Dispatchers
 import java.nio.file.Paths
@@ -204,6 +207,10 @@ class MainViewModel @Inject constructor(
         _state.update { it.copy(launchedAppId = value) }
     }
 
+    fun setLaunchedLibraryItem(libraryItem: LibraryItem) {
+        _state.update { it.copy(launchedLibraryItem = libraryItem) }
+    }
+
     fun setBootToContainer(value: Boolean) {
         _state.update { it.copy(bootToContainer = value) }
     }
@@ -215,11 +222,18 @@ class MainViewModel @Inject constructor(
             PluviaApp.events.emit(AndroidEvent.SetAllowedOrientation(PrefManager.allowedOrientation))
 
             val apiJob = viewModelScope.async(Dispatchers.IO) {
-                val container = ContainerUtils.getOrCreateContainer(context, appId)
-                if (container.isLaunchRealSteam()) {
-                    SteamUtils.restoreSteamApi(context, appId)
+                // Determine if this is a Steam game before calling Steam utilities
+                val gameSource = determineGameSource(appId)
+
+                if (gameSource == GameSource.STEAM) {
+                    val container = ContainerUtils.getOrCreateContainer(context, appId)
+                    if (container.isLaunchRealSteam()) {
+                        SteamUtils.restoreSteamApi(context, appId)
+                    } else {
+                        SteamUtils.replaceSteamApi(context, appId)
+                    }
                 } else {
-                    SteamUtils.replaceSteamApi(context, appId)
+                    Timber.i("Skipping Steam API replacement for ${gameSource} game (appId: $appId)")
                 }
             }
 
@@ -229,6 +243,58 @@ class MainViewModel @Inject constructor(
             apiJob.await()
 
             _uiEvent.send(MainUiEvent.LaunchApp)
+        }
+    }
+
+    fun launchApp(context: Context, libraryItem: LibraryItem) {
+        // Show booting splash before launching the app
+        viewModelScope.launch {
+            setShowBootingSplash(true)
+            PluviaApp.events.emit(AndroidEvent.SetAllowedOrientation(PrefManager.allowedOrientation))
+
+            val apiJob = viewModelScope.async(Dispatchers.IO) {
+                if (libraryItem.gameSource == GameSource.STEAM) {
+                    val container = ContainerUtils.getOrCreateContainer(context, libraryItem.appId)
+                    if (container.isLaunchRealSteam()) {
+                        SteamUtils.restoreSteamApi(context, libraryItem.appId)
+                    } else {
+                        SteamUtils.replaceSteamApi(context, libraryItem.appId)
+                    }
+                } else {
+                    Timber.i("Skipping Steam API replacement for ${libraryItem.gameSource} game: ${libraryItem.name}")
+                }
+            }
+
+            // Small delay to ensure the splash screen is visible before proceeding
+            delay(100)
+
+            apiJob.await()
+
+            // Store the library item for XServerScreen
+            setLaunchedLibraryItem(libraryItem)
+            setLaunchedAppId(libraryItem.appId) // Keep for backward compatibility
+
+            _uiEvent.send(MainUiEvent.LaunchApp)
+        }
+    }
+
+    /**
+     * Determine the game source based on appId
+     * Returns GameSource.GOG for appId = 0, otherwise checks Steam
+     */
+    private suspend fun determineGameSource(appId: Int): GameSource {
+        return if (appId == 0) {
+            // appId = 0 typically indicates a GOG game
+            GameSource.GOG
+        } else {
+            // Check if it exists in Steam
+            val steamAppInfo = SteamService.getAppInfoOf(appId)
+            if (steamAppInfo != null) {
+                GameSource.STEAM
+            } else {
+                // Default to Steam for unknown games
+                GameSource.STEAM
+            }
         }
     }
 

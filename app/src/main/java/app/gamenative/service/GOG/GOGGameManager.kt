@@ -6,6 +6,9 @@ import app.gamenative.data.GOGGame
 import app.gamenative.db.dao.GOGGameDao
 import app.gamenative.service.GameManager
 import app.gamenative.service.GOG.GOGServiceChaquopy
+import app.gamenative.data.PostSyncInfo
+import app.gamenative.enums.SyncResult
+import kotlinx.coroutines.CoroutineScope
 import app.gamenative.utils.StorageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,7 +34,7 @@ class GOGGameManager @Inject constructor(
      * Get the default install path for GOG games
      */
     fun getDefaultInstallPath(context: Context): String {
-        return "${context.dataDir.path}/gog_games"
+        return "${context.dataDir.path}/storage/gog_games"
     }
 
     /**
@@ -284,6 +287,107 @@ class GOGGameManager @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to get size for GOG game ${game.id}")
             0L
+        }
+    }
+
+    /**
+     * Get the executable path for a GOG game, similar to Steam's getInstalledExe
+     */
+    suspend fun getInstalledExe(context: Context, gameId: String): String = withContext(Dispatchers.IO) {
+        try {
+            val game = getGameById(gameId) ?: return@withContext ""
+            val installPath = getGameInstallPath(context, game.id, game.title)
+            val gameDir = File(installPath, "game_$gameId")
+            
+            if (!gameDir.exists()) {
+                Timber.w("GOG game directory does not exist: ${gameDir.absolutePath}")
+                return@withContext ""
+            }
+            
+            // Look for .exe files in the game directory
+            val exeFiles = gameDir.walkTopDown()
+                .filter { it.isFile && it.name.endsWith(".exe", ignoreCase = true) }
+                .filter { !it.name.equals("unins000.exe", ignoreCase = true) } // Skip uninstaller
+                .toList()
+            
+            if (exeFiles.isEmpty()) {
+                Timber.w("No executable files found in GOG game directory: ${gameDir.absolutePath}")
+                return@withContext ""
+            }
+            
+            // Prefer the main game executable (usually the largest or most obvious one)
+            val mainExe = exeFiles.maxByOrNull { it.length() }
+            
+            if (mainExe != null) {
+                // Return relative path from the game install directory
+                val relativePath = mainExe.relativeTo(File(installPath)).path.replace('\\', '/')
+                Timber.i("Found GOG game executable: $relativePath")
+                return@withContext relativePath
+            }
+            
+            return@withContext ""
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to get executable for GOG game $gameId")
+            ""
+        }
+    }
+
+    /**
+     * Get the install directory path for a GOG game
+     */
+    suspend fun getGameDirPath(context: Context, gameId: String): String = withContext(Dispatchers.IO) {
+        try {
+            val game = getGameById(gameId) ?: return@withContext ""
+            getGameInstallPath(context, game.id, game.title)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to get directory path for GOG game $gameId")
+            ""
+        }
+    }
+
+    override suspend fun launchGameWithSaveSync(
+        context: Context,
+        gameId: String,
+        gameName: String,
+        parentScope: CoroutineScope,
+        ignorePendingOperations: Boolean,
+        preferredSave: Int?
+    ): PostSyncInfo = withContext(Dispatchers.IO) {
+        try {
+            Timber.i("Starting GOG game launch with save sync for $gameName")
+            
+            // Check if GOG credentials exist
+            if (!GOGServiceChaquopy.hasStoredCredentials(context)) {
+                Timber.w("No GOG credentials found, skipping cloud save sync")
+                return@withContext PostSyncInfo(SyncResult.Success) // Continue without sync
+            }
+            
+            // Determine save path for GOG game
+            val savePath = "${getGameInstallPath(context, gameId, gameName)}/saves"
+            val authConfigPath = "${context.filesDir}/gog_auth.json"
+            
+            Timber.i("Starting GOG cloud save sync for game $gameId")
+            
+            // Perform GOG cloud save sync
+            val syncResult = GOGServiceChaquopy.syncCloudSaves(
+                gameId = gameId,
+                savePath = savePath,
+                authConfigPath = authConfigPath,
+                timestamp = 0.0f
+            )
+            
+            if (syncResult.isSuccess) {
+                Timber.i("GOG cloud save sync completed successfully")
+                PostSyncInfo(SyncResult.Success)
+            } else {
+                val error = syncResult.exceptionOrNull()
+                Timber.e(error, "GOG cloud save sync failed")
+                PostSyncInfo(SyncResult.UnknownFail)
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "GOG cloud save sync exception for game $gameId")
+            PostSyncInfo(SyncResult.UnknownFail)
         }
     }
 }

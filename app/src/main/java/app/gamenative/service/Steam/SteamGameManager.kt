@@ -4,6 +4,10 @@ import android.content.Context
 import app.gamenative.data.DownloadInfo
 import app.gamenative.service.GameManager
 import app.gamenative.service.SteamService
+import app.gamenative.data.PostSyncInfo
+import app.gamenative.enums.PathType
+import app.gamenative.enums.SaveLocation
+import kotlinx.coroutines.CoroutineScope
 import app.gamenative.utils.StorageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -154,6 +158,47 @@ class SteamGameManager @Inject constructor() : GameManager {
         } catch (e: Exception) {
             Timber.e(e, "Failed to resume Steam game download for $gameId")
             Result.failure(e)
+        }
+    }
+
+    override suspend fun launchGameWithSaveSync(
+        context: Context,
+        gameId: String,
+        gameName: String,
+        parentScope: CoroutineScope,
+        ignorePendingOperations: Boolean,
+        preferredSave: Int?
+    ): PostSyncInfo = withContext(Dispatchers.IO) {
+        try {
+            val appId = gameId.toInt()
+            Timber.i("Starting Steam game launch with save sync for $gameName (appId: $appId)")
+            
+            // Use existing Steam save sync logic
+            val prefixToPath: (String) -> String = { prefix ->
+                PathType.from(prefix).toAbsPath(context, appId, SteamService.userSteamId!!.accountID)
+            }
+            
+            // Convert Int? to SaveLocation
+            val saveLocation = when (preferredSave) {
+                0 -> SaveLocation.Local
+                1 -> SaveLocation.Remote
+                else -> SaveLocation.None
+            }
+            
+            val postSyncInfo = SteamService.beginLaunchApp(
+                appId = appId,
+                prefixToPath = prefixToPath,
+                ignorePendingOperations = ignorePendingOperations,
+                preferredSave = saveLocation,
+                parentScope = parentScope,
+            ).await()
+            
+            Timber.i("Steam game save sync completed for $gameName")
+            postSyncInfo
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Steam game launch with save sync failed for $gameId")
+            PostSyncInfo(app.gamenative.enums.SyncResult.UnknownFail)
         }
     }
 }

@@ -15,6 +15,7 @@ import app.gamenative.data.SteamGameWrapper
 import app.gamenative.db.dao.GOGGameDao
 import app.gamenative.db.dao.SteamAppDao
 import app.gamenative.service.DownloadService
+import app.gamenative.service.GOG.GOGLibraryManager
 import app.gamenative.service.SteamService
 import app.gamenative.ui.data.LibraryState
 import app.gamenative.ui.enums.AppFilter
@@ -33,12 +34,16 @@ import kotlin.math.min
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
-private val steamAppDao: SteamAppDao,
-private val gogGameDao: GOGGameDao,
+    private val steamAppDao: SteamAppDao,
+    private val gogGameDao: GOGGameDao,
+    private val gogLibraryManager: GOGLibraryManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
+    
+    // Expose GOG sync progress
+    val gogSyncProgress = gogLibraryManager.syncProgress
 
     // Keep the library scroll state. This will last longer as the VM will stay alive.
     var listState: LazyListState by mutableStateOf(LazyListState(0, 0))

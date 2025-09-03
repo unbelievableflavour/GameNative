@@ -53,4 +53,11 @@ def init_parser():
     repair_parser.add_argument('--path', type=str, default=constants.ANDROID_GAMES_DIR, help='Game path')
     repair_parser.add_argument('--platform', type=str, default='windows', choices=['windows', 'linux'], help='Platform')
     
+    # Save sync command
+    save_parser = subparsers.add_parser('save-sync', help='Sync game saves')
+    save_parser.add_argument('path', help='Path to sync files')
+    save_parser.add_argument('--dirname', help='Cloud save directory name')
+    save_parser.add_argument('--timestamp', type=float, default=0.0, help='Last sync timestamp')
+    save_parser.add_argument('--prefered-action', choices=['upload', 'download', 'none'], help='Preferred sync action')
+    
     return parser.parse_known_args()

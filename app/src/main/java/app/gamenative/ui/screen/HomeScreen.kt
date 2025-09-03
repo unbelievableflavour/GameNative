@@ -14,13 +14,14 @@ import app.gamenative.ui.enums.HomeDestination
 import app.gamenative.ui.model.HomeViewModel
 import app.gamenative.ui.screen.library.HomeLibraryScreen
 import app.gamenative.ui.theme.PluviaTheme
+import app.gamenative.data.LibraryItem
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     onChat: (Long) -> Unit,
     onClickExit: () -> Unit,
-    onClickPlay: (Int, Boolean) -> Unit,
+    onClickPlay: (LibraryItem, Boolean) -> Unit,
     onLogout: () -> Unit,
     onNavigateRoute: (String) -> Unit,
 ) {

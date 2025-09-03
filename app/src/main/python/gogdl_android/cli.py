@@ -141,6 +141,12 @@ def main():
             "update": download_manager.download,
             "info": download_manager.info,
         })
+    
+    # Handle save sync command
+    if arguments.command == "save-sync":
+        import gogdl_android.saves as saves
+        clouds_storage_manager = saves.CloudStorageManager(api_handler, authorization_manager)
+        switcher["save-sync"] = lambda: clouds_storage_manager.sync(arguments, unknown_args)
 
     if arguments.command in switcher:
         try:

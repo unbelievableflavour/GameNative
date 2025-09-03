@@ -94,9 +94,9 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
                     val originalArgv = sys.get("argv")
                     
                     try {
-                        // CRITICAL: Import android_compat FIRST to apply all patches
-                        python.getModule("android_compat")
-                        Timber.d("Android compatibility patches loaded successfully")
+                        // CRITICAL: Import android_compat FIRST to apply all patches (temporarily disabled for testing)
+                        // python.getModule("android_compat")
+                        // Timber.d("Android compatibility patches loaded successfully")
                         
                         // Now import our Android-compatible GOGDL CLI module
                         val gogdlCli = python.getModule("gogdl_android.cli")
@@ -1231,6 +1231,34 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
                     Result.failure(result.exceptionOrNull() ?: Exception("Failed to get game info"))
                 }
             } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+        /**
+         * Sync GOG cloud saves for a game
+         */
+        suspend fun syncCloudSaves(gameId: String, savePath: String, authConfigPath: String, timestamp: Float = 0.0f): Result<Unit> {
+            return try {
+                Timber.i("Starting GOG cloud save sync for game $gameId")
+                
+                val result = executeCommand(
+                    "--auth-config-path", authConfigPath,
+                    "save-sync", savePath,
+                    "--dirname", gameId,
+                    "--timestamp", timestamp.toString()
+                )
+                
+                if (result.isSuccess) {
+                    Timber.i("GOG cloud save sync completed successfully for game $gameId")
+                    Result.success(Unit)
+                } else {
+                    val error = result.exceptionOrNull() ?: Exception("Save sync failed")
+                    Timber.e(error, "GOG cloud save sync failed for game $gameId")
+                    Result.failure(error)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "GOG cloud save sync exception for game $gameId")
                 Result.failure(e)
             }
         }

@@ -41,6 +41,17 @@ import app.gamenative.enums.SaveLocation
 import app.gamenative.enums.SyncResult
 import app.gamenative.events.AndroidEvent
 import app.gamenative.service.SteamService
+import app.gamenative.service.GameLaunchService
+import app.gamenative.service.GOG.GOGLibraryManager
+import app.gamenative.service.GOG.GOGServiceChaquopy
+import app.gamenative.data.PostSyncInfo
+import app.gamenative.data.LibraryItem
+import app.gamenative.data.GameSource
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+
 import app.gamenative.ui.component.LoadingScreen
 import app.gamenative.ui.component.dialog.LoadingDialog
 import app.gamenative.ui.component.dialog.MessageDialog
@@ -134,9 +145,10 @@ fun PluviaMain(
 
                 viewModel.setLaunchedAppId(launchRequest.appId)
                 viewModel.setBootToContainer(false)
+                val libraryItem = createLibraryItemFromAppId(context, launchRequest.appId)
                 preLaunchApp(
                     context = context,
-                    appId = launchRequest.appId,
+                    libraryItem = libraryItem,
                     useTemporaryOverride = true,
                     setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
                     setLoadingProgress = viewModel::setLoadingDialogProgress,
@@ -158,9 +170,10 @@ fun PluviaMain(
                     Timber.i("[PluviaMain]: Received ExternalGameLaunch UI event for app ${event.appId}")
                     viewModel.setLaunchedAppId(event.appId)
                     viewModel.setBootToContainer(false)
+                    val libraryItem = createLibraryItemFromAppId(context, event.appId)
                     preLaunchApp(
                         context = context,
-                        appId = event.appId,
+                        libraryItem = libraryItem,
                         useTemporaryOverride = true,
                         setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
                         setLoadingProgress = viewModel::setLoadingDialogProgress,
@@ -292,6 +305,16 @@ fun PluviaMain(
             if (SteamService.isLoggedIn && state.currentScreen == PluviaScreen.LoginUser) {
                 navController.navigate(PluviaScreen.Home.route)
             }
+            
+            // Auto-start GOG background sync if user has GOG credentials
+            if (GOGServiceChaquopy.hasStoredCredentials(context)) {
+                Timber.d("[PluviaMain]: GOG credentials found - starting background library sync")
+                val gogLibraryManager = EntryPointAccessors.fromApplication(
+                    context,
+                    GOGLibraryManagerEntryPoint::class.java
+                ).gogLibraryManager()
+                gogLibraryManager.startBackgroundSync(context)
+            }
         }
     }
 
@@ -378,27 +401,33 @@ fun PluviaMain(
 
         DialogType.SYNC_CONFLICT -> {
             onConfirmClick = {
-                preLaunchApp(
-                    context = context,
-                    appId = state.launchedAppId,
-                    preferredSave = SaveLocation.Remote,
-                    setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
-                    setLoadingProgress = viewModel::setLoadingDialogProgress,
-                    setMessageDialogState = setMessageDialogState,
-                    onSuccess = viewModel::launchApp,
-                )
+                CoroutineScope(Dispatchers.IO).launch {
+                    val libraryItem = createLibraryItemFromAppId(context, state.launchedAppId)
+                    preLaunchApp(
+                        context = context,
+                        libraryItem = libraryItem,
+                        preferredSave = SaveLocation.Remote,
+                        setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
+                        setLoadingProgress = viewModel::setLoadingDialogProgress,
+                        setMessageDialogState = setMessageDialogState,
+                        onSuccess = viewModel::launchApp,
+                    )
+                }
                 msgDialogState = MessageDialogState(false)
             }
             onDismissClick = {
-                preLaunchApp(
-                    context = context,
-                    appId = state.launchedAppId,
-                    preferredSave = SaveLocation.Local,
-                    setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
-                    setLoadingProgress = viewModel::setLoadingDialogProgress,
-                    setMessageDialogState = setMessageDialogState,
-                    onSuccess = viewModel::launchApp,
-                )
+                CoroutineScope(Dispatchers.IO).launch {
+                    val libraryItem = createLibraryItemFromAppId(context, state.launchedAppId)
+                    preLaunchApp(
+                        context = context,
+                        libraryItem = libraryItem,
+                        preferredSave = SaveLocation.Local,
+                        setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
+                        setLoadingProgress = viewModel::setLoadingDialogProgress,
+                        setMessageDialogState = setMessageDialogState,
+                        onSuccess = viewModel::launchApp,
+                    )
+                }
                 msgDialogState = MessageDialogState(false)
             }
             onDismissRequest = {
@@ -429,15 +458,18 @@ fun PluviaMain(
         DialogType.PENDING_UPLOAD -> {
             onConfirmClick = {
                 setMessageDialogState(MessageDialogState(false))
-                preLaunchApp(
-                    context = context,
-                    appId = state.launchedAppId,
-                    ignorePendingOperations = true,
-                    setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
-                    setLoadingProgress = viewModel::setLoadingDialogProgress,
-                    setMessageDialogState = setMessageDialogState,
-                    onSuccess = viewModel::launchApp,
-                )
+                CoroutineScope(Dispatchers.IO).launch {
+                    val libraryItem = createLibraryItemFromAppId(context, state.launchedAppId)
+                    preLaunchApp(
+                        context = context,
+                        libraryItem = libraryItem,
+                        ignorePendingOperations = true,
+                        setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
+                        setLoadingProgress = viewModel::setLoadingDialogProgress,
+                        setMessageDialogState = setMessageDialogState,
+                        onSuccess = viewModel::launchApp,
+                    )
+                }
             }
             onDismissClick = {
                 setMessageDialogState(MessageDialogState(false))
@@ -450,15 +482,18 @@ fun PluviaMain(
         DialogType.APP_SESSION_ACTIVE -> {
             onConfirmClick = {
                 setMessageDialogState(MessageDialogState(false))
-                preLaunchApp(
-                    context = context,
-                    appId = state.launchedAppId,
-                    ignorePendingOperations = true,
-                    setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
-                    setLoadingProgress = viewModel::setLoadingDialogProgress,
-                    setMessageDialogState = setMessageDialogState,
-                    onSuccess = viewModel::launchApp,
-                )
+                CoroutineScope(Dispatchers.IO).launch {
+                    val libraryItem = createLibraryItemFromAppId(context, state.launchedAppId)
+                    preLaunchApp(
+                        context = context,
+                        libraryItem = libraryItem,
+                        ignorePendingOperations = true,
+                        setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
+                        setLoadingProgress = viewModel::setLoadingDialogProgress,
+                        setMessageDialogState = setMessageDialogState,
+                        onSuccess = viewModel::launchApp,
+                    )
+                }
             }
             onDismissClick = {
                 setMessageDialogState(MessageDialogState(false))
@@ -609,12 +644,12 @@ fun PluviaMain(
                 deepLinks = listOf(navDeepLink { uriPattern = "pluvia://home" }),
             ) {
                 HomeScreen(
-                    onClickPlay = { launchAppId, asContainer ->
-                        viewModel.setLaunchedAppId(launchAppId)
+                    onClickPlay = { libraryItem, asContainer ->
+                        viewModel.setLaunchedAppId(libraryItem.appId)
                         viewModel.setBootToContainer(asContainer)
                         preLaunchApp(
                             context = context,
-                            appId = launchAppId,
+                            libraryItem = libraryItem,
                             setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
                             setLoadingProgress = viewModel::setLoadingDialogProgress,
                             setMessageDialogState = { msgDialogState = it },
@@ -662,8 +697,18 @@ fun PluviaMain(
 
             /** Game Screen **/
             composable(route = PluviaScreen.XServer.route) {
+                // Use the stored LibraryItem, or create one from appId for backward compatibility
+                val libraryItem = state.launchedLibraryItem ?: run {
+                    // Fallback for cases where we only have appId
+                    LibraryItem(
+                        appId = state.launchedAppId,
+                        name = "Unknown Game",
+                        gameSource = if (state.launchedAppId == 0) GameSource.GOG else GameSource.STEAM
+                    )
+                }
+                
                 XServerScreen(
-                    appId = state.launchedAppId,
+                    libraryItem = libraryItem,
                     bootToContainer = state.bootToContainer,
                     navigateBack = {
                         CoroutineScope(Dispatchers.Main).launch {
@@ -671,10 +716,10 @@ fun PluviaMain(
                         }
                     },
                     onWindowMapped = { context, window ->
-                        viewModel.onWindowMapped(context, window, state.launchedAppId)
+                        viewModel.onWindowMapped(context, window, libraryItem.appId)
                     },
                     onExit = {
-                        viewModel.exitSteamApp(context, state.launchedAppId)
+                        viewModel.exitSteamApp(context, libraryItem.appId)
                     },
                     onGameLaunchError = { error ->
                         viewModel.onGameLaunchError(error)
@@ -700,14 +745,14 @@ fun PluviaMain(
 
 fun preLaunchApp(
     context: Context,
-    appId: Int,
+    libraryItem: LibraryItem,
     ignorePendingOperations: Boolean = false,
     preferredSave: SaveLocation = SaveLocation.None,
     useTemporaryOverride: Boolean = false,
     setLoadingDialogVisible: (Boolean) -> Unit,
     setLoadingProgress: (Float) -> Unit,
     setMessageDialogState: (MessageDialogState) -> Unit,
-    onSuccess: KFunction2<Context, Int, Unit>,
+    onSuccess: (Context, LibraryItem) -> Unit,
     retryCount: Int = 0,
 ) {
     setLoadingDialogVisible(true)
@@ -727,24 +772,27 @@ fun preLaunchApp(
         // TODO: combine somehow with container creation in HomeLibraryAppScreen
         val containerManager = ContainerManager(context)
         val container = if (useTemporaryOverride) {
-            ContainerUtils.getOrCreateContainerWithOverride(context, appId)
+            ContainerUtils.getOrCreateContainerWithOverride(context, libraryItem.appId)
         } else {
-            ContainerUtils.getOrCreateContainer(context, appId)
+            ContainerUtils.getOrCreateContainer(context, libraryItem.appId)
         }
         // must activate container before downloading save files
         containerManager.activateContainer(container)
 
         // sync save files and check no pending remote operations are running
-        val prefixToPath: (String) -> String = { prefix ->
-            PathType.from(prefix).toAbsPath(context, appId, SteamService.userSteamId!!.accountID)
-        }
-        val postSyncInfo = SteamService.beginLaunchApp(
-            appId = appId,
-            prefixToPath = prefixToPath,
-            ignorePendingOperations = ignorePendingOperations,
-            preferredSave = preferredSave,
+        // Use GameLaunchService to handle both Steam and GOG games
+        val gameLaunchService = EntryPointAccessors.fromApplication(
+            context,
+            GameLaunchServiceEntryPoint::class.java
+        ).gameLaunchService()
+        
+        val postSyncInfo = gameLaunchService.launchGameWithSaveSync(
+            context = context,
+            libraryItem = libraryItem,
             parentScope = this,
-        ).await()
+            ignorePendingOperations = ignorePendingOperations,
+            preferredSave = preferredSave?.ordinal
+        )
 
         setLoadingDialogVisible(false)
 
@@ -756,8 +804,8 @@ fun preLaunchApp(
                         type = DialogType.SYNC_CONFLICT,
                         title = "Save Conflict",
                         message = "There is a new remote save and a new local save, which would you " +
-                            "like to keep?\n\nLocal save:\n\t${Date(postSyncInfo.localTimestamp)}" +
-                            "\nRemote save:\n\t${Date(postSyncInfo.remoteTimestamp)}",
+                            "like to keep?\n\nLocal save:\n\t${java.util.Date(postSyncInfo.localTimestamp)}" +
+                            "\nRemote save:\n\t${java.util.Date(postSyncInfo.remoteTimestamp)}",
                         dismissBtnText = "Keep local",
                         confirmBtnText = "Keep remote",
                     ),
@@ -771,7 +819,7 @@ fun preLaunchApp(
                     delay(2000)
                     preLaunchApp(
                         context = context,
-                        appId = appId,
+                        libraryItem = libraryItem,
                         ignorePendingOperations = ignorePendingOperations,
                         preferredSave = preferredSave,
                         useTemporaryOverride = useTemporaryOverride,
@@ -819,7 +867,7 @@ fun preLaunchApp(
                     "Pending remote operations:${
                         postSyncInfo.pendingRemoteOperations.map { pro ->
                             "\n\tmachineName: ${pro.machineName}" +
-                                "\n\ttimestamp: ${Date(pro.timeLastUpdated * 1000L)}" +
+                                "\n\ttimestamp: ${java.util.Date(pro.timeLastUpdated * 1000L)}" +
                                 "\n\toperation: ${pro.operation}"
                         }.joinToString("\n")
                     }",
@@ -835,9 +883,9 @@ fun preLaunchApp(
                                     visible = true,
                                     type = DialogType.PENDING_UPLOAD_IN_PROGRESS,
                                     title = "Upload in Progress",
-                                    message = "You played ${SteamService.getAppInfoOf(appId)?.name} " +
+                                    message = "You played ${libraryItem.name} " +
                                         "on the device ${pro.machineName} " +
-                                        "(${Date(pro.timeLastUpdated * 1000L)}) and the save of " +
+                                        "(${java.util.Date(pro.timeLastUpdated * 1000L)}) and the save of " +
                                         "that session is still uploading.\nTry again later.",
                                     dismissBtnText = context.getString(R.string.ok),
                                 ),
@@ -851,9 +899,9 @@ fun preLaunchApp(
                                     type = DialogType.PENDING_UPLOAD,
                                     title = "Pending Upload",
                                     message = "You played " +
-                                        "${SteamService.getAppInfoOf(appId)?.name} " +
+                                        "${libraryItem.name} " +
                                         "on the device ${pro.machineName} " +
-                                        "(${Date(pro.timeLastUpdated * 1000L)}), " +
+                                        "(${java.util.Date(pro.timeLastUpdated * 1000L)}), " +
                                         "and that save is not yet in the cloud. " +
                                         "(upload not started)\nYou can still play " +
                                         "this game, but that may create a conflict " +
@@ -872,8 +920,8 @@ fun preLaunchApp(
                                     type = DialogType.APP_SESSION_ACTIVE,
                                     title = "App Running",
                                     message = "You are logged in on another device (${pro.machineName}) " +
-                                        "already playing ${SteamService.getAppInfoOf(appId)?.name} " +
-                                        "(${Date(pro.timeLastUpdated * 1000L)}), and that save " +
+                                        "already playing ${libraryItem.name} " +
+                                        "(${java.util.Date(pro.timeLastUpdated * 1000L)}), and that save " +
                                         "is not yet in the cloud. \nYou can still play this game, " +
                                         "but that will disconnect the other session from Steam " +
                                         "and may create a save conflict when that session " +
@@ -926,7 +974,60 @@ fun preLaunchApp(
 
             SyncResult.UpToDate,
             SyncResult.Success,
-            -> onSuccess(context, appId)
+            -> onSuccess(context, libraryItem)
         }
     }
 }
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface GameLaunchServiceEntryPoint {
+    fun gameLaunchService(): GameLaunchService
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface GOGLibraryManagerEntryPoint {
+    fun gogLibraryManager(): GOGLibraryManager
+}
+
+/**
+ * Helper function to create a LibraryItem from an appId
+ * This is used for legacy calls that only have appId available
+ */
+suspend fun createLibraryItemFromAppId(context: Context, appId: Int): LibraryItem {
+    // Try to get Steam app info first
+    val steamAppInfo = SteamService.getAppInfoOf(appId)
+    if (steamAppInfo != null) {
+        return LibraryItem(
+            appId = appId,
+            name = steamAppInfo.name,
+            iconHash = steamAppInfo.clientIconHash,
+            gameSource = GameSource.STEAM
+        )
+    }
+    
+    // If not found in Steam, check GOG
+    // Note: For GOG games launched via intent, appId is usually 0
+    // We'll need to handle this case differently
+    if (appId == 0) {
+        // This is likely a GOG game, but we need more context
+        // For now, create a minimal LibraryItem
+        return LibraryItem(
+            appId = 0,
+            name = "GOG Game",
+            gameSource = GameSource.GOG,
+            gogGameId = "unknown"
+        )
+    }
+    
+    // Fallback to Steam with unknown name
+    return LibraryItem(
+        appId = appId,
+        name = "Unknown Game",
+        gameSource = GameSource.STEAM
+    )
+}
+
+
+
