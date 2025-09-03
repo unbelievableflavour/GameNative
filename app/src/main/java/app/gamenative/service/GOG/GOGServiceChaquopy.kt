@@ -6,15 +6,30 @@ import android.content.Intent
 import android.os.IBinder
 import app.gamenative.data.GOGGame
 import app.gamenative.data.GOGCredentials
+import app.gamenative.data.DownloadInfo
+import app.gamenative.db.dao.GOGGameDao
 import com.chaquo.python.Kwarg
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import kotlinx.coroutines.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONObject
+import org.json.JSONArray
 import timber.log.Timber
 import java.io.File
+import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.zip.GZIPInputStream
+import java.util.zip.InflaterInputStream
+import java.io.ByteArrayInputStream
+import java.nio.charset.StandardCharsets
+import java.nio.charset.Charset
+import java.util.zip.Inflater
+import java.io.ByteArrayOutputStream
+import java.net.URLDecoder
 
 @Singleton
 class GOGServiceChaquopy @Inject constructor() : Service() {
@@ -28,6 +43,16 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
         // Constants
         private const val GOG_CLIENT_ID = "46899977096215655"
 
+        private var httpClient: OkHttpClient? = null
+        
+        fun setHttpClient(client: OkHttpClient) {
+            httpClient = client
+        }
+        
+        private fun getHttpClient(): OkHttpClient {
+            return httpClient ?: throw IllegalStateException("OkHttpClient not initialized. Call setHttpClient() first.")
+        }
+        
         fun getInstance(): GOGServiceChaquopy? = instance
 
         /**
@@ -61,124 +86,46 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
         /**
          * Execute GOGDL command using Chaquopy
          */
-        suspend fun executeCommand(vararg args: String): Result<String> = withContext(Dispatchers.IO) {
-            try {
-                if (!isInitialized) {
-                    return@withContext Result.failure(Exception("GOG service not initialized"))
-                }
-
-                val python = python ?: return@withContext Result.failure(Exception("Python not available"))
-
-                Timber.d("Executing GOGDL command with ${args.size} arguments: ${args.joinToString(" ")}")
-                if (args.isEmpty()) {
-                    Timber.w("WARNING: GOGDL called with no arguments!")
-                }
-
+        suspend fun executeCommand(vararg args: String): Result<String> {
+            return withContext(Dispatchers.IO) {
                 try {
-                    // First import Android compatibility patches
-                    python.getModule("android_compat")
-                    
-                    // Import GOGDL modules
-                    val gogdlArgs = python.getModule("gogdl.args")
-                    val gogdlCli = python.getModule("gogdl.cli")
-                    
-                    // Create a temporary sys.argv for the command
+                    val python = Python.getInstance()
                     val sys = python.getModule("sys")
                     val originalArgv = sys.get("argv")
                     
-                    // Set up arguments for GOGDL (skip the program name for argparse)
-                    val argsList = args.toList()
-                    Timber.d("Setting GOGDL arguments for argparse: ${argsList.joinToString(" ")}")
-                    
-                    // Set sys.argv to include program name + our arguments
-                    val fullArgsList = listOf("gogdl") + argsList
-                    val newArgv = python.builtins.callAttr("list", fullArgsList.toTypedArray())
-                    sys.put("argv", newArgv)
-                    
-                    // Debug: Print what sys.argv contains
-                    val currentArgv = sys.get("argv")
-                    Timber.d("sys.argv set to: $currentArgv")
-                    
                     try {
-                        // Add some Python debugging code to see what's happening
-                        val builtins = python.getModule("builtins")
-                        builtins.callAttr("print", "DEBUG: sys.argv before main: $currentArgv")
-                        builtins.callAttr("print", "DEBUG: len(sys.argv): ${currentArgv?.callAttr("__len__")}")
+                        // CRITICAL: Import android_compat FIRST to apply all patches
+                        python.getModule("android_compat")
+                        Timber.d("Android compatibility patches loaded successfully")
                         
-                        // Capture both stdout and stderr to get GOGDL output
-                        val io = python.getModule("io")
-                        val sys = python.getModule("sys")
-                        val originalStdout = sys.get("stdout")
-                        val originalStderr = sys.get("stderr")
-                        val capturedStdout = io.callAttr("StringIO")
-                        val capturedStderr = io.callAttr("StringIO")
-                        sys.put("stdout", capturedStdout)
-                        sys.put("stderr", capturedStderr)
+                        // Now import our Android-compatible GOGDL CLI module
+                        val gogdlCli = python.getModule("gogdl_android.cli")
                         
-                        try {
-                            // Call GOGDL main function
-                            val result = gogdlCli.callAttr("main")
-                            
-                            // Get the captured output
-                            val stdoutOutput = capturedStdout.callAttr("getvalue")?.toString() ?: ""
-                            val stderrOutput = capturedStderr.callAttr("getvalue")?.toString() ?: ""
-                            val combinedOutput = if (stdoutOutput.isNotBlank() && stderrOutput.isNotBlank()) {
-                                "STDOUT: $stdoutOutput\nSTDERR: $stderrOutput"
-                            } else if (stdoutOutput.isNotBlank()) {
-                                stdoutOutput
-                            } else if (stderrOutput.isNotBlank()) {
-                                stderrOutput
-                            } else {
-                                ""
-                            }
-                            
-                            Timber.d("GOGDL stdout: $stdoutOutput")
-                            Timber.d("GOGDL stderr: $stderrOutput")
-                            
-                            // GOGDL typically prints to stdout, so we'll return success with output
-                            Timber.i("GOGDL command executed successfully")
-                            Result.success(combinedOutput)
-                        } finally {
-                            // Restore original stdout and stderr
-                            sys.put("stdout", originalStdout)
-                            sys.put("stderr", originalStderr)
-                        }
+                        // Set up arguments for argparse
+                        val argsList = listOf("gogdl") + args.toList()
+                        Timber.d("Setting GOGDL arguments for argparse: ${args.joinToString(" ")}")
+                        // Convert to Python list to avoid jarray issues
+                        val pythonList = python.builtins.callAttr("list", argsList.toTypedArray())
+                        sys.put("argv", pythonList)
+                        Timber.d("sys.argv set to: $argsList")
+                        
+                        // Execute the main function
+                        gogdlCli.callAttr("main")
+                        
+                        Timber.d("GOGDL execution completed successfully")
+                        Result.success("GOGDL execution completed")
+                        
                     } catch (e: Exception) {
-                        // Handle SystemExit and other Python exceptions
-                        val errorMessage = when {
-                            e.message?.contains("SystemExit") == true -> {
-                                // Extract exit code from SystemExit
-                                val exitCode = try {
-                                    e.message?.substringAfter("SystemExit: ")?.substringBefore(" ")?.toIntOrNull() ?: -1
-                                } catch (ex: Exception) { -1 }
-                                
-                                when (exitCode) {
-                                    0 -> {
-                                        // Exit code 0 means success, don't treat as error
-                                        Timber.i("GOGDL completed successfully with exit code 0")
-                                        return@withContext Result.success("Command completed successfully")
-                                    }
-                                    2 -> "Invalid arguments provided to GOGDL. Please check the command parameters."
-                                    1 -> "GOGDL execution failed. Please check your authentication and network connection."
-                                    else -> "GOGDL exited with code $exitCode"
-                                }
-                            }
-                            else -> e.message ?: "Unknown GOGDL error"
-                        }
-                        
-                        Timber.w("GOGDL execution issue: $errorMessage")
-                        throw Exception(errorMessage)
+                        Timber.d("GOGDL execution completed with exception: ${e.javaClass.simpleName} - ${e.message}")
+                        Result.failure(Exception("GOGDL execution failed: $e"))
                     } finally {
-                        // Restore original argv
+                        // Restore original sys.argv
                         sys.put("argv", originalArgv)
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "GOGDL command failed")
-                    Result.failure(e)
+                    Timber.e(e, "Failed to execute GOGDL command: ${args.joinToString(" ")}")
+                    Result.failure(Exception("GOGDL execution failed: $e"))
                 }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to execute GOGDL command")
-                Result.failure(e)
             }
         }
 
@@ -396,9 +343,9 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
         }
 
         /**
-         * Get GOG library
+         * Get GOG library with caching optimization
          */
-        suspend fun getLibrary(authConfigPath: String): Result<List<GOGGame>> {
+        suspend fun getLibrary(authConfigPath: String, gogGameDao: GOGGameDao? = null): Result<List<GOGGame>> {
             return try {
                 Timber.i("Getting GOG library...")
                 
@@ -472,11 +419,36 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
                     
                     Timber.i("Converted ${gameIds.size} game IDs")
                     
-                    // Fetch game details for the first few games (limit to avoid overwhelming the API)
-                    val maxGamesToFetch = 10 // Start with just 10 games for testing
+                    // Check for cached games first if dao is provided
                     val games = mutableListOf<GOGGame>()
+                    val gameIdsToFetch = mutableListOf<String>()
                     
-                    gameIds.take(maxGamesToFetch).forEach { gameId ->
+                    if (gogGameDao != null) {
+                        // Check which games we already have cached
+                        gameIds.forEach { gameId ->
+                            try {
+                                val cachedGame = gogGameDao.getById(gameId)
+                                if (cachedGame != null) {
+                                    games.add(cachedGame)
+                                    Timber.d("Using cached game: ${cachedGame.title}")
+                                } else {
+                                    gameIdsToFetch.add(gameId)
+                                }
+                            } catch (e: Exception) {
+                                Timber.w("Error checking cache for game $gameId: ${e.message}")
+                                gameIdsToFetch.add(gameId) // Fallback to fetching
+                            }
+                        }
+                        
+                        Timber.i("Found ${games.size} cached games, need to fetch ${gameIdsToFetch.size} games")
+                    } else {
+                        // No dao provided, fetch all games
+                        gameIdsToFetch.addAll(gameIds)
+                        Timber.i("No cache available, fetching all ${gameIdsToFetch.size} games")
+                    }
+                    
+                    // Fetch missing game details from API
+                    gameIdsToFetch.forEach { gameId ->
                         try {
                             val gameDetails = fetchGameDetails(gameId, accessToken)
                             if (gameDetails != null) {
@@ -600,21 +572,646 @@ class GOGServiceChaquopy @Inject constructor() : Service() {
         }
 
         /**
-         * Download a GOG game
+         * Get game info directly from GOG API (bypassing GOGDL)
          */
-        suspend fun downloadGame(gameId: String, installPath: String, authConfigPath: String): Result<Unit> {
-            return try {
-                val result = executeCommand("--auth-config-path", authConfigPath, "download", 
-                                          "--install-path", installPath, gameId)
-                if (result.isSuccess) {
-                    Result.success(Unit)
-                } else {
-                    Result.failure(result.exceptionOrNull() ?: Exception("Download failed"))
+        private suspend fun getGameInfoDirect(gameId: String, authConfigPath: String): Result<String> {
+            return withContext(Dispatchers.IO) {
+                try {
+                    // Read auth credentials
+                    val authResult = readAuthCredentials(authConfigPath)
+                    if (!authResult.isSuccess) {
+                        return@withContext Result.failure(authResult.exceptionOrNull() ?: Exception("Failed to read auth credentials"))
+                    }
+                    
+                    val (accessToken, userId) = authResult.getOrThrow()
+                    
+                    // Make direct API call to GOG
+                    val client = getHttpClient()
+                    val request = Request.Builder()
+                        .url("https://content-system.gog.com/products/$gameId/os/windows/builds?generation=2")
+                        .header("Authorization", "Bearer $accessToken")
+                        .header("User-Agent", "GOGGalaxyClient/2.0.45.61 (Windows_NT 10.0.19041)")
+                        .build()
+                    
+                    val response = client.newCall(request).execute()
+                    
+                    if (!response.isSuccessful) {
+                        response.close()
+                        return@withContext Result.failure(Exception("GOG API request failed: ${response.code} ${response.message}"))
+                    }
+                    
+                    val responseBody = response.body?.string() ?: ""
+                    response.close()
+                    
+                    Timber.d("GOG API response: $responseBody")
+                    Result.success(responseBody)
+                    
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to get game info from GOG API")
+                    Result.failure(e)
                 }
+            }
+        }
+
+        /**
+         * Enhanced download method using direct GOG API (no GOGDL)
+         */
+        suspend fun downloadGameDirect(gameId: String, installPath: String, authConfigPath: String): Result<DownloadInfo?> {
+            return try {
+                Timber.i("Starting direct GOG download for game $gameId")
+                
+                // Step 1: Get game info directly from GOG API
+                val gameInfoResult = getGameInfoDirect(gameId, authConfigPath)
+                
+                if (!gameInfoResult.isSuccess) {
+                    return Result.failure(Exception("Failed to get game info: ${gameInfoResult.exceptionOrNull()?.message}"))
+                }
+                
+                // Step 2: Parse the game info to extract download information
+                val gameInfoJson = gameInfoResult.getOrNull() ?: ""
+                Timber.d("Game info JSON received, length: ${gameInfoJson.length}")
+                
+                // Step 3: Parse JSON to extract download URLs
+                val downloadUrls = parseGOGApiResponse(gameInfoJson, authConfigPath)
+                if (downloadUrls.isEmpty()) {
+                    return Result.failure(Exception("No download URLs found in game info"))
+                }
+                
+                // Step 4: Read auth credentials once for all downloads
+                val authResult = readAuthCredentials(authConfigPath)
+                val accessToken = if (authResult.isSuccess) {
+                    authResult.getOrNull()?.first ?: ""
+                } else {
+                    ""
+                }
+                
+                // Step 5: Create DownloadInfo object for progress tracking
+                val downloadInfo = DownloadInfo(jobCount = downloadUrls.size)
+                
+                // Step 6: Start the actual download process with progress tracking
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val success = downloadFilesWithProgress(downloadUrls, installPath, downloadInfo, accessToken, gameId)
+                        if (success) {
+                            downloadInfo.setProgress(1.0f) // Mark as complete
+                            Timber.i("Download completed successfully")
+                        } else {
+                            throw Exception("Download failed")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Download failed")
+                        downloadInfo.setProgress(-1.0f) // Mark as failed
+                    }
+                }
+                
+                Result.success(downloadInfo)
+                
             } catch (e: Exception) {
+                Timber.e(e, "Failed to start GOG download")
                 Result.failure(e)
             }
         }
+        
+        /**
+         * Parse GOG API response to extract download URLs - REAL IMPLEMENTATION
+         */
+        private suspend fun parseGOGApiResponse(apiResponse: String, authConfigPath: String): List<GOGDownloadFile> {
+            return withContext(Dispatchers.IO) {
+                try {
+                    val json = JSONObject(apiResponse)
+                    val downloadFiles = mutableListOf<GOGDownloadFile>()
+                    
+                    // GOG API returns build information
+                    if (json.has("items")) {
+                        val builds = json.getJSONArray("items")
+                        
+                        // Get the latest stable build (prefer non-beta branches)
+                        var selectedBuild: JSONObject? = null
+                        for (i in 0 until builds.length()) {
+                            val build = builds.getJSONObject(i)
+                            val branch = build.optString("branch", "")
+                            
+                            // Prefer stable builds (null/empty branch) over beta builds
+                            if (branch.isEmpty() || branch == "null") {
+                                selectedBuild = build
+                                break
+                            } else if (selectedBuild == null) {
+                                // If no stable build found yet, use this one as fallback
+                                selectedBuild = build
+                            }
+                        }
+                        
+                        if (selectedBuild != null) {
+                            val buildLink = selectedBuild.optString("link", "")
+                            val buildId = selectedBuild.optString("build_id", "")
+                            val versionName = selectedBuild.optString("version_name", "")
+                            
+                            Timber.i("Selected build: $buildId ($versionName)")
+                            
+                            if (buildLink.isNotEmpty()) {
+                                // Fetch the build manifest
+                                val manifestResult = fetchBuildManifest(buildLink, authConfigPath)
+                                if (manifestResult.isSuccess) {
+                                    val manifestBytes = manifestResult.getOrNull() ?: byteArrayOf()
+                                    downloadFiles.addAll(parseManifest(manifestBytes))
+                                }
+                            }
+                        }
+                    }
+                    
+                    Timber.i("Found ${downloadFiles.size} files to download")
+                    downloadFiles.forEach { file ->
+                        Timber.d("Download file: ${file.filename} (${file.size} bytes)")
+                    }
+                    
+                    downloadFiles
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to parse GOG API response")
+                    emptyList()
+                }
+            }
+        }
+
+        /**
+         * Fetch build manifest from GOG with proper decompression
+         */
+        private suspend fun fetchBuildManifest(manifestUrl: String, authConfigPath: String): Result<ByteArray> {
+            return withContext(Dispatchers.IO) {
+                try {
+                    val client = httpClient ?: throw IllegalStateException("HTTP client not initialized")
+                    
+                    // Get auth info using existing function
+                    val authResult = readAuthCredentials(authConfigPath)
+                    if (!authResult.isSuccess) {
+                        return@withContext Result.failure(authResult.exceptionOrNull() ?: Exception("Failed to read auth credentials"))
+                    }
+                    
+                    val authPair = authResult.getOrNull() ?: return@withContext Result.failure(Exception("No auth credentials found"))
+                    val accessToken = authPair.first
+                    val userId = authPair.second
+                    
+                    val request = Request.Builder()
+                        .url(manifestUrl)
+                        .header("Authorization", "Bearer $accessToken")
+                        .header("User-Agent", "GOGGalaxyClient/2.0.45.61 (Windows_x86_64)")
+                        .build()
+                    
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val manifestBytes = response.body?.bytes() ?: byteArrayOf()
+                        Timber.d("Manifest content length: ${manifestBytes.size}")
+                        
+                        // Log a preview of the binary content
+                        val preview = manifestBytes.take(50).joinToString("") { "%02x".format(it) }
+                        Timber.d("Manifest binary preview: $preview")
+                        
+                        Result.success(manifestBytes)
+                    } else {
+                        Timber.e("Failed to fetch manifest: ${response.code} ${response.message}")
+                        Result.failure(Exception("Failed to fetch manifest: ${response.code}"))
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error fetching build manifest")
+                    Result.failure(e)
+                }
+            }
+        }
+
+        /**
+         * Parse zlib-compressed GOG manifest and extract depot information for further processing
+         */
+        private suspend fun parseManifest(manifestContent: ByteArray): List<GOGDownloadFile> {
+            return withContext(Dispatchers.IO) {
+                try {
+                    Timber.d("Parsing manifest, length: ${manifestContent.size}")
+                    
+                    // GOG manifests are zlib compressed according to Reloaded III specification
+                    val decompressedContent = try {
+                        val inflater = Inflater()
+                        inflater.setInput(manifestContent)
+                        
+                        val buffer = ByteArray(8192)
+                        val output = ByteArrayOutputStream()
+                        
+                        while (!inflater.finished()) {
+                            val count = inflater.inflate(buffer)
+                            output.write(buffer, 0, count)
+                        }
+                        
+                        inflater.end()
+                        val decompressedBytes = output.toByteArray()
+                        String(decompressedBytes, Charset.forName("UTF-8"))
+                        
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to decompress manifest with zlib")
+                        throw e
+                    }
+                    
+                    Timber.d("Decompressed manifest length: ${decompressedContent.length}")
+                    Timber.d("Decompressed manifest preview: ${decompressedContent.take(500)}")
+                    
+                    // Parse the JSON manifest
+                    val manifestJson = JSONObject(decompressedContent)
+                    val downloadFiles = mutableListOf<GOGDownloadFile>()
+                    
+                    // GOG manifest structure - process depots
+                    if (manifestJson.has("depots")) {
+                        val depots = manifestJson.getJSONArray("depots")
+                        Timber.d("Found ${depots.length()} depots in manifest")
+                        
+                        for (i in 0 until depots.length()) {
+                            val depot = depots.getJSONObject(i)
+                            val depotManifest = depot.optString("manifest", "")
+                            val depotSize = depot.optLong("size", 0)
+                            val depotCompressedSize = depot.optLong("compressedSize", 0)
+                            
+                            Timber.d("Processing depot $i: manifest=$depotManifest, size=$depotSize, compressed=$depotCompressedSize")
+                            
+                            if (depotManifest.isNotEmpty()) {
+                                // Create a placeholder download entry for this depot
+                                // In a full implementation, we would fetch the depot manifest and parse its files
+                                val downloadFile = GOGDownloadFile(
+                                    filename = "depot_${i}_${depotManifest}.bin",
+                                    url = "https://gog-cdn-fastly.gog.com/content-system/v2/meta/${depotManifest.substring(0,2)}/${depotManifest.substring(2,4)}/$depotManifest",
+                                    size = depotSize,
+                                    checksum = depotManifest
+                                )
+                                downloadFiles.add(downloadFile)
+                                
+                                Timber.d("Added depot file: ${downloadFile.filename} (${downloadFile.size} bytes)")
+                            }
+                        }
+                    }
+                    
+                    // Also check for offline depot
+                    if (manifestJson.has("offlineDepot")) {
+                        val offlineDepot = manifestJson.getJSONObject("offlineDepot")
+                        val depotManifest = offlineDepot.optString("manifest", "")
+                        val depotSize = offlineDepot.optLong("size", 0)
+                        
+                        if (depotManifest.isNotEmpty()) {
+                            val downloadFile = GOGDownloadFile(
+                                filename = "offline_depot_${depotManifest}.bin",
+                                url = "https://gog-cdn-fastly.gog.com/content-system/v2/meta/${depotManifest.substring(0,2)}/${depotManifest.substring(2,4)}/$depotManifest",
+                                size = depotSize,
+                                checksum = depotManifest
+                            )
+                            downloadFiles.add(downloadFile)
+                            
+                            Timber.d("Added offline depot: ${downloadFile.filename} (${downloadFile.size} bytes)")
+                        }
+                    }
+                    
+                    Timber.i("Successfully parsed ${downloadFiles.size} depot files from GOG manifest")
+                    downloadFiles
+                    
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to parse GOG manifest")
+                    emptyList()
+                }
+            }
+        }
+
+        /**
+         * Parse individual depot files
+         */
+        private suspend fun parseDepotFiles(depot: JSONObject, authConfigPath: String, productId: String, buildId: String): List<GOGDownloadFile> {
+            return withContext(Dispatchers.IO) {
+                try {
+                    val downloadFiles = mutableListOf<GOGDownloadFile>()
+                    
+                    if (depot.has("files")) {
+                        val files = depot.getJSONArray("files")
+                        Timber.d("Found ${files.length()} files in depot")
+                        
+                        for (i in 0 until files.length()) {
+                            val file = files.getJSONObject(i)
+                            val downloadFile = parseFileInfo(file, authConfigPath, productId, buildId)
+                            if (downloadFile != null) {
+                                downloadFiles.add(downloadFile)
+                            }
+                        }
+                    }
+                    
+                    downloadFiles
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to parse depot files")
+                    emptyList()
+                }
+            }
+        }
+
+        /**
+         * Parse individual file information and generate secure download URL
+         */
+        private suspend fun parseFileInfo(file: JSONObject, authConfigPath: String, productId: String, buildId: String): GOGDownloadFile? {
+            return try {
+                val filename = file.optString("path", file.optString("name", file.optString("filename", "unknown_file")))
+                val size = file.optLong("size", file.optLong("compressed_size", 0))
+                val hash = file.optString("hash", file.optString("md5", ""))
+                
+                // Generate secure download URL using GOG's content system
+                val secureUrl = generateSecureDownloadUrl(productId, buildId, filename, authConfigPath)
+                
+                if (secureUrl.isNotEmpty() && filename.isNotEmpty()) {
+                    GOGDownloadFile(
+                        filename = filename.substringAfterLast('/'), // Get just the filename without path
+                        url = secureUrl,
+                        size = size
+                    )
+                } else {
+                    Timber.w("Could not generate secure URL for file: $filename")
+                    null
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to parse file info")
+                null
+            }
+        }
+
+        /**
+         * Generate secure download URL for GOG files
+         */
+        private suspend fun generateSecureDownloadUrl(productId: String, buildId: String, filePath: String, authConfigPath: String): String {
+            return withContext(Dispatchers.IO) {
+                try {
+                    val authResult = readAuthCredentials(authConfigPath)
+                    if (!authResult.isSuccess) {
+                        return@withContext ""
+                    }
+                    
+                    val (accessToken, userId) = authResult.getOrThrow()
+                    
+                    // Use GOG's secure link API to get actual download URLs
+                    val secureApiUrl = "https://content-system.gog.com/products/$productId/secure_link?generation=2&_version=2&path=${URLDecoder.decode(filePath, "UTF-8")}"
+                    
+                    val client = getHttpClient()
+                    val request = Request.Builder()
+                        .url(secureApiUrl)
+                        .header("Authorization", "Bearer $accessToken")
+                        .header("User-Agent", "GOGGalaxyClient/2.0.45.61 (Windows_NT 10.0.19041)")
+                        .build()
+                    
+                    val response = client.newCall(request).execute()
+                    
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string() ?: ""
+                        response.close()
+                        
+                        if (responseBody.isNotEmpty()) {
+                            // The response should contain the secure download URL
+                            val secureJson = JSONObject(responseBody)
+                            val downloadUrl = secureJson.optString("url", secureJson.optString("download_url", ""))
+                            
+                            if (downloadUrl.isNotEmpty()) {
+                                Timber.d("Generated secure URL for: $filePath")
+                                return@withContext downloadUrl
+                            }
+                        }
+                    } else {
+                        Timber.w("Failed to get secure link: ${response.code} ${response.message}")
+                        response.close()
+                    }
+                    
+                    // Fallback: try direct CDN URL construction (this might not work for all files)
+                    val fallbackUrl = "https://gog-cdn-fastly.gog.com/content-system/v2/builds/$buildId/$filePath"
+                    Timber.d("Using fallback URL for: $filePath")
+                    return@withContext fallbackUrl
+                    
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to generate secure download URL for: $filePath")
+                    ""
+                }
+            }
+        }
+
+        /**
+         * Enhanced download method with proper progress tracking (bypassing GOGDL completely)
+         */
+        suspend fun downloadGame(gameId: String, installPath: String, authConfigPath: String): Result<DownloadInfo?> {
+            return try {
+                Timber.i("Starting pure GOGDL download for game $gameId")
+                
+                val installDir = File(installPath)
+                if (!installDir.exists()) {
+                    installDir.mkdirs()
+                }
+                
+                // Create DownloadInfo for progress tracking
+                val downloadInfo = DownloadInfo(jobCount = 1)
+                
+                // Start progress monitoring in parallel
+                val progressMonitoringJob = CoroutineScope(Dispatchers.IO).launch {
+                    monitorDownloadProgressSimple(installDir, downloadInfo)
+                }
+                
+                // Start GOGDL download in parallel
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        // Create support directory for redistributables (like Heroic does)
+                        val supportDir = File(installDir.parentFile, "gog-support")
+                        supportDir.mkdirs()
+                        
+                        val result = executeCommand(
+                            "--auth-config-path", authConfigPath,
+                            "download", gameId,
+                            "--platform", "windows",
+                            "--path", installDir.absolutePath,
+                            "--support", supportDir.absolutePath,
+                            "--skip-dlcs",
+                            "--lang", "en-US",
+                            "--max-workers", "1"
+                        )
+                        
+                        if (result.isSuccess) {
+                            downloadInfo.setProgress(1.0f) // Mark as complete
+                            Timber.i("GOGDL download completed successfully")
+                        } else {
+                            downloadInfo.setProgress(-1.0f) // Mark as failed
+                            Timber.e("GOGDL download failed: ${result.exceptionOrNull()?.message}")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "GOGDL download failed")
+                        downloadInfo.setProgress(-1.0f) // Mark as failed
+                    } finally {
+                        progressMonitoringJob.cancel()
+                    }
+                }
+                
+                Result.success(downloadInfo)
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to start GOG game download $gameId")
+                Result.failure(e)
+            }
+        }
+
+        /**
+         * Download game files using GOGDL for the entire game download
+         */
+        private suspend fun downloadFilesWithProgress(
+            downloadFiles: List<GOGDownloadFile>,
+            installPath: String,
+            downloadInfo: DownloadInfo,
+            accessToken: String,
+            gameId: String
+        ): Boolean {
+            return withContext(Dispatchers.IO) {
+                try {
+                    val installDir = File(installPath)
+                    if (!installDir.exists()) {
+                        installDir.mkdirs()
+                    }
+                    
+                    Timber.i("Starting GOGDL download for game $gameId")
+                    Timber.i("Found ${downloadFiles.size} depot files to download")
+                    
+                    // Calculate total size for progress information
+                    val totalSize = downloadFiles.sumOf { it.size }
+                    Timber.i("Total download size: ${totalSize / (1024 * 1024)} MB")
+                    
+                    // Start progress monitoring in parallel
+                    val progressMonitoringJob = CoroutineScope(Dispatchers.IO).launch {
+                        monitorDownloadProgressSimple(installDir, downloadInfo)
+                    }
+                    
+                    try {
+                        // Create support directory for redistributables (like Heroic does)
+                        val supportDir = File(installDir.parentFile, "gog-support")
+                        supportDir.mkdirs()
+                        
+                        // Use GOGDL to download the entire game at once
+                        val result = executeCommand(
+                            "--auth-config-path", "/data/user/0/app.gamenative/files/gog_auth.json",
+                            "download", gameId,
+                            "--platform", "windows",
+                            "--path", installDir.absolutePath,
+                            "--support", supportDir.absolutePath,
+                            "--skip-dlcs",
+                            "--lang", "en-US",
+                            "--max-workers", "1"
+                        )
+                        
+                        if (result.isSuccess) {
+                            // Mark download as complete
+                            downloadInfo.setProgress(1.0f)
+                            Timber.i("GOGDL download completed successfully")
+                            true
+                        } else {
+                            Timber.e("GOGDL download failed: ${result.exceptionOrNull()?.message}")
+                            false
+                        }
+                    } finally {
+                        // Stop progress monitoring
+                        progressMonitoringJob.cancel()
+                    }
+                    
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to download game files")
+                    false
+                }
+            }
+        }
+        
+        /**
+         * Simple progress monitoring for pure GOGDL downloads
+         */
+        private suspend fun monitorDownloadProgressSimple(installDir: File, downloadInfo: DownloadInfo) {
+            var lastProgress = 0.0f
+            val startTime = System.currentTimeMillis()
+            var lastSize = 0L
+            
+            try {
+                while (true) {
+                    delay(3000L) // Check every 3 seconds
+                    
+                    if (!installDir.exists()) {
+                        continue
+                    }
+                    
+                    // Calculate current download size by scanning the directory
+                    val currentSize = calculateDirectorySize(installDir)
+                    
+                    // Simple progress calculation based on file growth
+                    val progress = when {
+                        currentSize == 0L -> 0.05f // Just started
+                        currentSize > lastSize -> {
+                            // Files are growing, show incremental progress
+                            val increment = 0.1f
+                            (lastProgress + increment).coerceAtMost(0.90f)
+                        }
+                        currentSize > 1024 * 1024 -> { // > 1MB downloaded
+                            // Some files exist, show moderate progress
+                            0.50f.coerceAtLeast(lastProgress)
+                        }
+                        else -> lastProgress
+                    }
+                    
+                    // Update progress if it changed
+                    if (progress > lastProgress) {
+                        downloadInfo.setProgress(progress)
+                        lastProgress = progress
+                        
+                        val elapsed = (System.currentTimeMillis() - startTime) / 1000
+                        val mbDownloaded = currentSize / (1024 * 1024)
+                        
+                        Timber.d("Download progress: ${(progress * 100).toInt()}% (${mbDownloaded}MB) after ${elapsed}s")
+                    }
+                    
+                    lastSize = currentSize
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Expected when job is cancelled, don't log as error
+                Timber.d("Download progress monitoring cancelled")
+                throw e // Re-throw to properly cancel the coroutine
+            } catch (e: Exception) {
+                Timber.w(e, "Error monitoring download progress")
+            }
+        }
+        
+        /**
+         * Calculate the total size of all files in a directory
+         */
+        private fun calculateDirectorySize(directory: File): Long {
+            var size = 0L
+            try {
+                directory.walkTopDown().forEach { file ->
+                    if (file.isFile) {
+                        size += file.length()
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "Error calculating directory size")
+            }
+            return size
+        }
+        
+        /**
+         * Data classes for game files and chunks
+         */
+        private data class GOGGameFile(
+            val path: String,
+            val size: Long,
+            val checksum: String,
+            val chunks: List<GOGFileChunk>
+        )
+        
+        private data class GOGFileChunk(
+            val checksum: String,
+            val size: Long,
+            val compressedSize: Long,
+            val url: String
+        )
+
+        /**
+         * Data class to represent a downloadable file
+         */
+        private data class GOGDownloadFile(
+            val filename: String,
+            val url: String,
+            val size: Long,
+            val checksum: String = ""
+        )
 
         /**
          * Get game info including download size

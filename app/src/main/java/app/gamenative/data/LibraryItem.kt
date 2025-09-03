@@ -2,11 +2,6 @@ package app.gamenative.data
 
 import app.gamenative.Constants
 
-enum class GameSource {
-    STEAM,
-    GOG
-}
-
 /**
  * Data class for the Library list
  */

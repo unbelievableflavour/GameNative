@@ -37,8 +37,8 @@ class GOGLibraryManager @Inject constructor(
                 return@withContext Result.success(Unit)
             }
             
-            // Get library from GOG service
-            val libraryResult = GOGServiceChaquopy.getLibrary(authConfigPath)
+            // Get library from GOG service with caching
+            val libraryResult = GOGServiceChaquopy.getLibrary(authConfigPath, gogGameDao)
             
             if (libraryResult.isSuccess) {
                 val games = libraryResult.getOrThrow()

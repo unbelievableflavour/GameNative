@@ -13,6 +13,8 @@ import com.winlator.widget.XServerView
 import com.winlator.xenvironment.XEnvironment
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
+import okhttp3.OkHttpClient
+import javax.inject.Inject
 
 // Add PostHog imports
 import com.posthog.android.PostHogAndroid
@@ -22,6 +24,9 @@ typealias NavChangedListener = NavController.OnDestinationChangedListener
 
 @HiltAndroidApp
 class PluviaApp : SplitCompatApplication() {
+
+    @Inject
+    lateinit var httpClient: OkHttpClient
 
     override fun onCreate() {
         super.onCreate()
@@ -64,6 +69,7 @@ class PluviaApp : SplitCompatApplication() {
         // Initialize GOG Service
         try {
             GOGServiceChaquopy.initialize(this)
+            GOGServiceChaquopy.setHttpClient(httpClient)
             Timber.i("[PluviaApp]: GOG Service initialized successfully")
         } catch (e: Exception) {
             Timber.e(e, "[PluviaApp]: Failed to initialize GOG Service")

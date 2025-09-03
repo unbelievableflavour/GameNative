@@ -1,5 +1,8 @@
 package app.gamenative.ui.screen.library
 
+import androidx.hilt.navigation.compose.hiltViewModel
+import android.widget.Toast
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -71,6 +74,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import app.gamenative.Constants
 import app.gamenative.R
+import app.gamenative.data.DownloadInfo
 import app.gamenative.data.GameSource
 import app.gamenative.data.LibraryItem
 import app.gamenative.data.SteamApp
@@ -85,8 +89,10 @@ import app.gamenative.ui.data.AppMenuOption
 import app.gamenative.ui.enums.AppOptionMenuType
 import app.gamenative.ui.enums.DialogType
 import app.gamenative.ui.internal.fakeAppInfo
+import app.gamenative.ui.model.GameManagerViewModel
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.utils.ContainerUtils
+import app.gamenative.utils.MarkerUtils
 import app.gamenative.utils.StorageUtils
 import com.google.android.play.core.splitcompat.SplitCompat
 import com.skydoves.landscapist.ImageOptions
@@ -100,6 +106,7 @@ import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import app.gamenative.service.SteamService.Companion.getAppDirPath
 import com.posthog.PostHog
@@ -119,16 +126,11 @@ import kotlin.math.roundToInt
 import app.gamenative.enums.PathType
 import com.winlator.container.ContainerManager
 import app.gamenative.enums.SyncResult
-import android.widget.Toast
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import app.gamenative.enums.Marker
 import app.gamenative.enums.SaveLocation
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.ui.graphics.compositeOver
-import app.gamenative.utils.MarkerUtils
 
 // https://partner.steamgames.com/doc/store/assets/libraryassets#4
 
@@ -175,6 +177,7 @@ fun AppScreen(
     game: LibraryItem,
     onClickPlay: (Boolean) -> Unit,
     onBack: () -> Unit,
+    gameManagerViewModel: GameManagerViewModel = hiltViewModel(), // Add this
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -190,26 +193,20 @@ fun AppScreen(
         )
     }
 
-    // Steam-specific state - only relevant for Steam games
     var downloadInfo by remember(game.appId, game.gameSource) {
-        mutableStateOf(
-            if (game.gameSource == GameSource.STEAM) {
-                SteamService.getAppDownloadInfo(game.appId)
-            } else {
-                null
-            }
-        )
+        mutableStateOf(gameManagerViewModel.getDownloadInfo(game))
     }
+
     var downloadProgress by remember(downloadInfo) {
         mutableFloatStateOf(downloadInfo?.getProgress() ?: 0f)
     }
+    
     var isInstalled by remember(game.appId, game.gameSource) {
-        mutableStateOf(
-            when (game.gameSource) {
-                GameSource.STEAM -> SteamService.isAppInstalled(game.appId)
-                GameSource.GOG -> false // TODO: Implement GOG installation tracking
-            }
-        )
+        mutableStateOf(false) // We'll update this with LaunchedEffect
+    }
+    
+    LaunchedEffect(game.appId, game.gameSource) {
+        isInstalled = gameManagerViewModel.isGameInstalled(context, game)
     }
 
     val isValidToDownload by remember(game.appId, game.gameSource, appInfo) {
@@ -350,55 +347,78 @@ fun AppScreen(
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-        onResult = { permissions ->
-            val writePermissionGranted = permissions[Manifest.permission.WRITE_EXTERNAL_STORAGE] ?: false
-            val readPermissionGranted = permissions[Manifest.permission.READ_EXTERNAL_STORAGE] ?: false
+    contract = ActivityResultContracts.RequestMultiplePermissions(),
+    onResult = { permissions ->
+        val writePermissionGranted = permissions[Manifest.permission.WRITE_EXTERNAL_STORAGE] ?: false
+        val readPermissionGranted = permissions[Manifest.permission.READ_EXTERNAL_STORAGE] ?: false
 
-            if (writePermissionGranted && readPermissionGranted) {
-                hasStoragePermission = true
+        if (writePermissionGranted && readPermissionGranted) {
+            hasStoragePermission = true
 
-                val depots = SteamService.getDownloadableDepots(game.appId)
-                Timber.i("There are ${depots.size} depots belonging to ${game.appId}")
-                // How much free space is on disk
-                val availableBytes = StorageUtils.getAvailableSpace(SteamService.defaultStoragePath)
-                val availableSpace = StorageUtils.formatBinarySize(availableBytes)
-                // TODO: un-hardcode "public" branch
-                val downloadSize = StorageUtils.formatBinarySize(
-                    depots.values.sumOf {
-                        it.manifests["public"]?.download ?: 0
-                    },
-                )
-                val installBytes = depots.values.sumOf { it.manifests["public"]?.size ?: 0 }
-                val installSize = StorageUtils.formatBinarySize(installBytes)
-                if (availableBytes < installBytes) {
-                    msgDialogState = MessageDialogState(
-                        visible = true,
-                        type = DialogType.NOT_ENOUGH_SPACE,
-                        title = context.getString(R.string.not_enough_space),
-                        message = "The app being installed needs $installSize of space but " +
-                                "there is only $availableSpace left on this device",
-                        confirmBtnText = context.getString(R.string.acknowledge),
+            when (game.gameSource) {
+                GameSource.STEAM -> {
+                    val depots = SteamService.getDownloadableDepots(game.appId)
+                    Timber.i("There are ${depots.size} depots belonging to ${game.appId}")
+                    // How much free space is on disk
+                    val availableBytes = StorageUtils.getAvailableSpace(SteamService.defaultStoragePath)
+                    val availableSpace = StorageUtils.formatBinarySize(availableBytes)
+                    // TODO: un-hardcode "public" branch
+                    val downloadSize = StorageUtils.formatBinarySize(
+                        depots.values.sumOf {
+                            it.manifests["public"]?.download ?: 0
+                        },
                     )
-                } else {
+                    val installBytes = depots.values.sumOf { it.manifests["public"]?.size ?: 0 }
+                    val installSize = StorageUtils.formatBinarySize(installBytes)
+                    if (availableBytes < installBytes) {
+                        msgDialogState = MessageDialogState(
+                            visible = true,
+                            type = DialogType.NOT_ENOUGH_SPACE,
+                            title = context.getString(R.string.not_enough_space),
+                            message = "The app being installed needs $installSize of space but " +
+                                    "there is only $availableSpace left on this device",
+                            confirmBtnText = context.getString(R.string.acknowledge),
+                        )
+                    } else {
+                        msgDialogState = MessageDialogState(
+                            visible = true,
+                            type = DialogType.INSTALL_APP,
+                            title = context.getString(R.string.download_prompt_title),
+                            message = "The app being installed has the following space requirements. Would you like to proceed?" +
+                                    "\n\n\tDownload Size: $downloadSize" +
+                                    "\n\tSize on Disk: $installSize" +
+                                    "\n\tAvailable Space: $availableSpace",
+                            confirmBtnText = context.getString(R.string.proceed),
+                            dismissBtnText = context.getString(R.string.cancel),
+                        )
+                    }
+                }
+                GameSource.GOG -> {
+                    // GOG install logic
+                    val gogInstallPath = "${context.dataDir.path}/gog_games"
+                    val availableBytes = StorageUtils.getAvailableSpace(context.dataDir.path)
+                    val availableSpace = StorageUtils.formatBinarySize(availableBytes)
+                    
+                    // For now, show a basic install dialog for GOG games
+                    // TODO: Get actual size information from GOG API
                     msgDialogState = MessageDialogState(
                         visible = true,
                         type = DialogType.INSTALL_APP,
                         title = context.getString(R.string.download_prompt_title),
-                        message = "The app being installed has the following space requirements. Would you like to proceed?" +
-                                "\n\n\tDownload Size: $downloadSize" +
-                                "\n\tSize on Disk: $installSize" +
-                                "\n\tAvailable Space: $availableSpace",
+                        message = "Install ${game.name} from GOG?" +
+                                "\n\nInstall Path: $gogInstallPath/${game.name}" +
+                                "\nAvailable Space: $availableSpace",
                         confirmBtnText = context.getString(R.string.proceed),
                         dismissBtnText = context.getString(R.string.cancel),
                     )
                 }
-            } else {
-                // Snack bar this?
-                Toast.makeText(context, "Storage permission required", Toast.LENGTH_SHORT).show()
             }
-        },
-    )
+        } else {
+            // Snack bar this?
+            Toast.makeText(context, "Storage permission required", Toast.LENGTH_SHORT).show()
+        }
+    },
+)
 
 
     val onDismissRequest: (() -> Unit)?
@@ -412,11 +432,15 @@ fun AppScreen(
                         "game_name" to game.name
                     ))
                 downloadInfo?.cancel()
-                SteamService.deleteApp(game.appId)
-                downloadInfo = null
-                downloadProgress = 0f
-                isInstalled = SteamService.isAppInstalled(game.appId)
-                msgDialogState = MessageDialogState(false)
+                CoroutineScope(Dispatchers.IO).launch {
+                    gameManagerViewModel.deleteGame(context, game)
+                    downloadInfo = null
+                    downloadProgress = 0f
+                    withContext(Dispatchers.Main) {
+                        isInstalled = gameManagerViewModel.isGameInstalled(context, game)
+                    }
+                    msgDialogState = MessageDialogState(false)
+                }
             }
             onDismissRequest = { msgDialogState = MessageDialogState(false) }
             onDismissClick = { msgDialogState = MessageDialogState(false) }
@@ -435,24 +459,32 @@ fun AppScreen(
                     properties = mapOf(
                         "game_name" to game.name
                     ))
-                CoroutineScope(Dispatchers.IO).launch {
-                    downloadProgress = 0f
-                    downloadInfo = SteamService.downloadApp(game.appId)
-                    msgDialogState = MessageDialogState(false)
-                }
+                    CoroutineScope(Dispatchers.IO).launch {
+                        downloadProgress = 0f
+                        downloadInfo = gameManagerViewModel.installGame(context, game)
+                        
+                        msgDialogState = MessageDialogState(false)
+                    }
             }
             onDismissClick = { msgDialogState = MessageDialogState(false) }
         }
 
         DialogType.DELETE_APP -> {
             onConfirmClick = {
-                // Delete the Steam app data
-                SteamService.deleteApp(game.appId)
-                // Also delete the associated container so it will be recreated on next launch
-                ContainerUtils.deleteContainer(context, game.appId)
-                msgDialogState = MessageDialogState(false)
-
-                isInstalled = SteamService.isAppInstalled(game.appId)
+                CoroutineScope(Dispatchers.IO).launch {
+                    val success = gameManagerViewModel.deleteGame(context, game)
+                    val newInstallStatus = gameManagerViewModel.isGameInstalled(context, game)
+                    
+                    withContext(Dispatchers.Main) {
+                        isInstalled = newInstallStatus
+                        if (success) {
+                            Toast.makeText(context, "Game deleted successfully", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Failed to delete game", Toast.LENGTH_SHORT).show()
+                        }
+                        msgDialogState = MessageDialogState(false)
+                    }
+                }
             }
             onDismissRequest = { msgDialogState = MessageDialogState(false) }
             onDismissClick = { msgDialogState = MessageDialogState(false) }
@@ -539,10 +571,13 @@ fun AppScreen(
                         confirmBtnText = context.getString(R.string.yes),
                         dismissBtnText = context.getString(R.string.no),
                     )
-                } else if (SteamService.hasPartialDownload(game.appId)) {
+                } else if (gameManagerViewModel.hasPartialDownload(game)) {
                     // Resume incomplete download
                     CoroutineScope(Dispatchers.IO).launch {
-                        downloadInfo = SteamService.downloadApp(game.appId)
+                        downloadInfo = gameManagerViewModel.resumeDownload(context, game)
+                        if (downloadInfo == null) {
+                            Toast.makeText(context, "Failed to resume download", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 } else if (!isInstalled) {
                     permissionLauncher.launch(
@@ -561,11 +596,16 @@ fun AppScreen(
                 }
             },
             onPauseResumeClick = {
-                if (isDownloading()) {
+                if (downloadInfo != null) {
                     downloadInfo?.cancel()
                     downloadInfo = null
                 } else {
-                    downloadInfo = SteamService.downloadApp(game.appId)
+                    CoroutineScope(Dispatchers.IO).launch {
+                        downloadInfo = gameManagerViewModel.resumeDownload(context, game)
+                        if (downloadInfo == null) {
+                            Toast.makeText(context, "Failed to resume", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             },
             onDeleteDownloadClick = {
@@ -578,7 +618,14 @@ fun AppScreen(
                     dismissBtnText = context.getString(R.string.no)
                 )
             },
-            onUpdateClick = { CoroutineScope(Dispatchers.IO).launch { downloadInfo = SteamService.downloadApp(game.appId) } },
+            onUpdateClick = { 
+                CoroutineScope(Dispatchers.IO).launch {
+                    downloadInfo = gameManagerViewModel.resumeDownload(context, game)
+                    if (downloadInfo == null) {
+                        Toast.makeText(context, "Update not available", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
             onBack = onBack,
             optionsMenu = arrayOf(
                 AppMenuOption(
@@ -653,7 +700,10 @@ fun AppScreen(
                                 AppOptionMenuType.VerifyFiles,
                                 onClick = {
                                     CoroutineScope(Dispatchers.IO).launch {
-                                        downloadInfo = SteamService.downloadApp(game.appId)
+                                        downloadInfo = gameManagerViewModel.resumeDownload(context, game)
+                                        if (downloadInfo == null) {
+                                            Toast.makeText(context, "Verify files not available", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 },
                             ),
@@ -661,7 +711,10 @@ fun AppScreen(
                                 AppOptionMenuType.Update,
                                 onClick = {
                                     CoroutineScope(Dispatchers.IO).launch {
-                                        downloadInfo = SteamService.downloadApp(game.appId)
+                                        downloadInfo = gameManagerViewModel.resumeDownload(context, game)
+                                        if (downloadInfo == null) {
+                                            Toast.makeText(context, "Update not available", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 },
                             ),
