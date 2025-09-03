@@ -54,4 +54,22 @@ interface GOGGameDao {
         deleteAll()
         insertAll(games)
     }
+
+    @Transaction
+    suspend fun upsertPreservingInstallStatus(games: List<GOGGame>) {
+        games.forEach { newGame ->
+            val existingGame = getById(newGame.id)
+            if (existingGame != null) {
+                // Preserve installation status and path from existing game
+                val gameToInsert = newGame.copy(
+                    isInstalled = existingGame.isInstalled,
+                    installPath = existingGame.installPath
+                )
+                insert(gameToInsert)
+            } else {
+                // New game, insert as-is
+                insert(newGame)
+            }
+        }
+    }
 }

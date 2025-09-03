@@ -54,7 +54,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
+import androidx.hilt.navigation.compose.hiltViewModel
 import app.gamenative.PrefManager
+import app.gamenative.ui.model.GameManagerViewModel
 import app.gamenative.utils.DeviceUtils
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -66,6 +68,7 @@ internal fun LibraryListPane(
     gogSyncProgress: SyncProgress,
     listState: LazyListState,
     sheetState: SheetState,
+    gameManagerViewModel: GameManagerViewModel,
     onFilterChanged: (AppFilter) -> Unit,
     onModalBottomSheet: (Boolean) -> Unit,
     onPageChange: (Int) -> Unit,
@@ -208,7 +211,8 @@ internal fun LibraryListPane(
                         AppItem(
                             modifier = Modifier.animateItem(),
                             appInfo = item,
-                            onClick = { onNavigate(item) }
+                            onClick = { onNavigate(item) },
+                            gameManagerViewModel = gameManagerViewModel
                         )
                         if (item.index < state.appInfoList.lastIndex) {
                             HorizontalDivider()
@@ -295,6 +299,7 @@ private fun Preview_LibraryListPane() {
                 state = state,
                 gogSyncProgress = SyncProgress(),
                 sheetState = sheetState,
+                gameManagerViewModel = hiltViewModel(),
                 onFilterChanged = { },
                 onPageChange = { },
                 onModalBottomSheet = {

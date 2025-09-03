@@ -15,6 +15,8 @@ import app.gamenative.service.GOG.SyncProgress
 import app.gamenative.service.SteamService
 import app.gamenative.ui.data.LibraryState
 import app.gamenative.ui.enums.AppFilter
+import androidx.hilt.navigation.compose.hiltViewModel
+import app.gamenative.ui.model.GameManagerViewModel
 import app.gamenative.ui.screen.library.AppScreen
 import app.gamenative.ui.theme.PluviaTheme
 import java.util.EnumSet
@@ -23,6 +25,7 @@ import java.util.EnumSet
 @Composable
 internal fun LibraryDetailPane(
     game: LibraryItem,
+    gameManagerViewModel: GameManagerViewModel,
     onClickPlay: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -44,6 +47,7 @@ internal fun LibraryDetailPane(
                 gogSyncProgress = SyncProgress(),
                 listState = listState,
                 sheetState = sheetState,
+                gameManagerViewModel = gameManagerViewModel,
                 onFilterChanged = {},
                 onPageChange = {},
                 onModalBottomSheet = {},
@@ -82,6 +86,7 @@ private fun Preview_LibraryDetailPane() {
                 isShared = false,
                 gameSource = GameSource.STEAM
             ),
+            gameManagerViewModel = hiltViewModel(),
             onClickPlay = { },
             onBack = { },
         )

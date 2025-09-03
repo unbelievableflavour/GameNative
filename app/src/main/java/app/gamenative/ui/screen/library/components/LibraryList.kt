@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.gamenative.data.LibraryItem
+import app.gamenative.ui.model.GameManagerViewModel
 
 @Composable
 internal fun LibraryList(
@@ -25,6 +26,7 @@ internal fun LibraryList(
     contentPaddingValues: PaddingValues,
     listState: LazyListState,
     list: List<LibraryItem>,
+    gameManagerViewModel: GameManagerViewModel,
     onItemClick: (Int) -> Unit,
 ) {
     if (list.isEmpty()) {
@@ -57,6 +59,7 @@ internal fun LibraryList(
                     modifier = Modifier.animateItem(),
                     appInfo = item,
                     onClick = { onItemClick(item.appId) },
+                    gameManagerViewModel = gameManagerViewModel,
                 )
 
                 if (item.index < list.lastIndex) {

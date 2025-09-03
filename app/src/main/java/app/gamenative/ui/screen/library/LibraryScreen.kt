@@ -41,6 +41,7 @@ import app.gamenative.ui.enums.Orientation
 import app.gamenative.events.AndroidEvent
 import app.gamenative.PluviaApp
 import app.gamenative.ui.internal.fakeAppInfo
+import app.gamenative.ui.model.GameManagerViewModel
 import app.gamenative.ui.model.LibraryViewModel
 import app.gamenative.ui.screen.library.components.LibraryDetailPane
 import app.gamenative.ui.screen.library.components.LibraryListPane
@@ -52,6 +53,7 @@ import java.util.EnumSet
 @Composable
 fun HomeLibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
+    gameManagerViewModel: GameManagerViewModel = hiltViewModel(),
     onClickPlay: (LibraryItem, Boolean) -> Unit,
     onNavigateRoute: (String) -> Unit,
     onLogout: () -> Unit,
@@ -65,6 +67,7 @@ fun HomeLibraryScreen(
         gogSyncProgress = gogSyncProgress,
         listState = viewModel.listState,
         sheetState = sheetState,
+        gameManagerViewModel = gameManagerViewModel,
         onFilterChanged = viewModel::onFilterChanged,
         onPageChange = viewModel::onPageChange,
         onModalBottomSheet = viewModel::onModalBottomSheet,
@@ -83,6 +86,7 @@ private fun LibraryScreenContent(
     gogSyncProgress: SyncProgress,
     listState: LazyListState,
     sheetState: SheetState,
+    gameManagerViewModel: GameManagerViewModel,
     onFilterChanged: (AppFilter) -> Unit,
     onPageChange: (Int) -> Unit,
     onModalBottomSheet: (Boolean) -> Unit,
@@ -110,6 +114,7 @@ private fun LibraryScreenContent(
                 gogSyncProgress = gogSyncProgress,
                 listState = listState,
                 sheetState = sheetState,
+                gameManagerViewModel = gameManagerViewModel,
                 onFilterChanged = onFilterChanged,
                 onPageChange = onPageChange,
                 onModalBottomSheet = onModalBottomSheet,
@@ -125,6 +130,7 @@ private fun LibraryScreenContent(
         } else {
             LibraryDetailPane(
                 game = selectedGame!!,
+                gameManagerViewModel = gameManagerViewModel,
                 onBack = { selectedGame = null },
                 onClickPlay = { onClickPlay(selectedGame!!, it) },
             )
@@ -172,6 +178,7 @@ private fun Preview_LibraryScreenContent() {
             state = state,
             gogSyncProgress = SyncProgress(), // Default empty progress for preview
             sheetState = sheetState,
+            gameManagerViewModel = hiltViewModel(),
             onIsSearching = {},
             onSearchQuery = {},
             onFilterChanged = { },

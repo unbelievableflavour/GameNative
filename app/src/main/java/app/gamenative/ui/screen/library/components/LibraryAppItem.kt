@@ -36,11 +36,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import app.gamenative.data.GameSource
 import app.gamenative.data.LibraryItem
 import app.gamenative.service.DownloadService
 import app.gamenative.service.SteamService
 import app.gamenative.ui.internal.fakeAppInfo
+import app.gamenative.ui.model.GameManagerViewModel
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.ui.util.ListItemImage
 
@@ -49,21 +53,44 @@ internal fun AppItem(
     modifier: Modifier = Modifier,
     appInfo: LibraryItem,
     onClick: () -> Unit,
+    gameManagerViewModel: GameManagerViewModel,
 ) {
     // Determine download and install state
     val downloadInfo = remember(appInfo.appId) { SteamService.getAppDownloadInfo(appInfo.appId) }
     val downloadProgress = remember(downloadInfo) { downloadInfo?.getProgress() ?: 0f }
     val isDownloading = downloadInfo != null && downloadProgress < 1f
-    val isInstalled = remember(appInfo.appId) {
-        SteamService.isAppInstalled(appInfo.appId)
+    
+    // Check installation status based on game source
+    var isInstalled by remember(appInfo.appId, appInfo.gameSource) {
+        mutableStateOf(false)
+    }
+    
+    val context = LocalContext.current
+    LaunchedEffect(appInfo.appId, appInfo.gameSource) {
+        isInstalled = when (appInfo.gameSource) {
+            GameSource.STEAM -> SteamService.isAppInstalled(appInfo.appId)
+            GameSource.GOG -> {
+                // Use GameManagerViewModel to check GOG installation status
+                gameManagerViewModel.isGameInstalled(context, appInfo)
+            }
+        }
     }
 
     var appSizeOnDisk by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(isInstalled, appInfo.gameSource) {
         if (isInstalled) {
             appSizeOnDisk = "..."
-            DownloadService.getSizeOnDiskDisplay(appInfo.appId) {  appSizeOnDisk = it }
+            when (appInfo.gameSource) {
+                GameSource.STEAM -> {
+                    DownloadService.getSizeOnDiskDisplay(appInfo.appId) { appSizeOnDisk = it }
+                }
+                GameSource.GOG -> {
+                    // For GOG games, calculate size from install directory
+                    // This will need to be implemented in GameManagerViewModel
+                    appSizeOnDisk = "N/A" // Placeholder for now
+                }
+            }
         }
     }
 
@@ -219,7 +246,11 @@ private fun Preview_AppItem() {
                         )
                     },
                     itemContent = {
-                        AppItem(appInfo = it, onClick = {})
+                        AppItem(
+                            appInfo = it, 
+                            onClick = {},
+                            gameManagerViewModel = hiltViewModel()
+                        )
                     },
                 )
             }

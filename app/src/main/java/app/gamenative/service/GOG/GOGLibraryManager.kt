@@ -157,7 +157,7 @@ class GOGLibraryManager @Inject constructor(
                 if (games.isNotEmpty()) {
                     // PHASE 1: Insert all games immediately with original GOG images (fast)
                     Timber.i("Phase 1: Inserting ${games.size} GOG games with original images for immediate display")
-                    gogGameDao.insertAll(games)
+                    gogGameDao.upsertPreservingInstallStatus(games)
                     
                     _syncProgress.value = _syncProgress.value.copy(
                         syncedGames = games.size,
@@ -180,7 +180,7 @@ class GOGLibraryManager @Inject constructor(
                             val enhancedBatch = enhanceGamesWithGamesDB(batch)
                             
                             // Update enhanced games in database
-                            gogGameDao.insertAll(enhancedBatch)
+                            gogGameDao.upsertPreservingInstallStatus(enhancedBatch)
                             
                             val enhancedCount = (batchIndex + 1) * BATCH_SIZE.coerceAtMost(batch.size)
                             val currentGame = batch.lastOrNull()?.title
@@ -252,7 +252,7 @@ class GOGLibraryManager @Inject constructor(
                     val enhancedGames = enhanceGamesWithGamesDB(games)
                     
                     // Insert/update games in database
-                    gogGameDao.insertAll(enhancedGames)
+                    gogGameDao.upsertPreservingInstallStatus(enhancedGames)
                     
                     Timber.i("GOG library sync completed successfully with ${enhancedGames.size} games")
                 } else {
