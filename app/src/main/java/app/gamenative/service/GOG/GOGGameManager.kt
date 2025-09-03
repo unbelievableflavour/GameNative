@@ -32,9 +32,10 @@ class GOGGameManager @Inject constructor(
 
     /**
      * Get the default install path for GOG games
+     * This path must match the E: drive mount in Winlator: /data/data/app.gamenative/storage
      */
     fun getDefaultInstallPath(context: Context): String {
-        return "${context.dataDir.path}/storage/gog_games"
+        return "/data/data/app.gamenative/storage/gog_games"
     }
 
     /**

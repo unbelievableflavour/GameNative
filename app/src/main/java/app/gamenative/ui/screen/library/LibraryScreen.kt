@@ -107,6 +107,7 @@ private fun LibraryScreenContent(
         if (selectedGame == null) {
             LibraryListPane(
                 state = state,
+                gogSyncProgress = gogSyncProgress,
                 listState = listState,
                 sheetState = sheetState,
                 onFilterChanged = onFilterChanged,

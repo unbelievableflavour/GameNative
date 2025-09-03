@@ -18,7 +18,7 @@ NON_NATIVE_SEP = "\\" if os.sep == "/" else "/"
 
 # Android-specific paths
 ANDROID_DATA_DIR = "/data/user/0/app.gamenative/files"
-ANDROID_GAMES_DIR = "/data/user/0/app.gamenative/files/storage/gog_games"
+ANDROID_GAMES_DIR = "/data/data/app.gamenative/storage/gog_games"
 CONFIG_DIR = ANDROID_DATA_DIR
 MANIFESTS_DIR = os.path.join(CONFIG_DIR, "manifests")
 

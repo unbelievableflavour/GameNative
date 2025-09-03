@@ -160,7 +160,7 @@ class V2Manager:
             raise
             
     def _download_file(self, file_info: dict, install_path: str, product_id: str = None):
-        """Download a single file from depot"""
+        """Download a single file from depot by assembling all chunks"""
         try:
             file_path = file_info.get('path', '')
             if not file_path:
@@ -181,12 +181,28 @@ class V2Manager:
             if not chunks:
                 self.logger.warning(f"No chunks found for file: {file_path}")
                 return
-                
+            
+            self.logger.info(f"File {file_path} has {len(chunks)} chunks to download")
+            
+            # Download and assemble all chunks for this file
+            file_data = b''
+            total_size = 0
+            
+            for i, chunk in enumerate(chunks):
+                self.logger.debug(f"Downloading chunk {i+1}/{len(chunks)} for {file_path}")
+                chunk_data = self._download_chunk(chunk, product_id)
+                if chunk_data:
+                    file_data += chunk_data
+                    total_size += len(chunk_data)
+                else:
+                    self.logger.error(f"Failed to download chunk {i+1} for {file_path}")
+                    return
+            
+            # Write the complete assembled file
             with open(full_path, 'wb') as f:
-                for chunk in chunks:
-                    chunk_data = self._download_chunk(chunk, product_id)
-                    if chunk_data:
-                        f.write(chunk_data)
+                f.write(file_data)
+            
+            self.logger.info(f"Successfully assembled file {file_path} ({total_size} bytes from {len(chunks)} chunks)")
                         
             # Set file permissions if specified
             if 'flags' in file_info and 'executable' in file_info['flags']:
@@ -247,11 +263,16 @@ class V2Manager:
                 response = cdn_session.get(chunk_url)
                 
                 if response.status_code == 200:
-                    # Decompress if needed
+                    # Always decompress chunks as they are zlib compressed by GOG
                     chunk_data = response.content
-                    if chunk_info.get('compressed'):
+                    try:
+                        # GOG chunks are always zlib compressed
                         chunk_data = zlib.decompress(chunk_data)
-                    self.logger.debug(f"Successfully downloaded chunk {chunk_md5} using {link_type}")
+                        self.logger.debug(f"Successfully downloaded and decompressed chunk {chunk_md5} using {link_type} ({len(response.content)} -> {len(chunk_data)} bytes)")
+                    except zlib.error as e:
+                        self.logger.warning(f"Failed to decompress chunk {chunk_md5}, trying as uncompressed: {e}")
+                        # If decompression fails, use raw data
+                        chunk_data = response.content
                     return chunk_data
                 else:
                     self.logger.warning(f"Chunk {chunk_md5} failed on {link_type} {chunk_url}: HTTP {response.status_code} - {response.text[:200]}")

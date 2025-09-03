@@ -46,6 +46,7 @@ import app.gamenative.ui.internal.fakeAppInfo
 import app.gamenative.service.DownloadService
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.ui.component.topbar.AccountButton
+import app.gamenative.service.GOG.SyncProgress
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -62,6 +63,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 @Composable
 internal fun LibraryListPane(
     state: LibraryState,
+    gogSyncProgress: SyncProgress,
     listState: LazyListState,
     sheetState: SheetState,
     onFilterChanged: (AppFilter) -> Unit,
@@ -130,6 +132,19 @@ internal fun LibraryListPane(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        
+                        // Show GOG sync progress if running
+                        if (gogSyncProgress.isRunning) {
+                            Text(
+                                text = if (gogSyncProgress.currentGame != null) {
+                                    "Syncing: ${gogSyncProgress.currentGame} (${gogSyncProgress.syncedGames}/${gogSyncProgress.totalGames})"
+                                } else {
+                                    "Syncing GOG library... (${gogSyncProgress.syncedGames}/${gogSyncProgress.totalGames})"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     if (isViewWide) {
@@ -278,6 +293,7 @@ private fun Preview_LibraryListPane() {
             LibraryListPane(
                 listState = LazyListState(2, 64),
                 state = state,
+                gogSyncProgress = SyncProgress(),
                 sheetState = sheetState,
                 onFilterChanged = { },
                 onPageChange = { },

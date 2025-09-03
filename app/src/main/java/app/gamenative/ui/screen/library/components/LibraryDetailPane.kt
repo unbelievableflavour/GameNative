@@ -11,6 +11,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import app.gamenative.PrefManager
 import app.gamenative.data.GameSource
 import app.gamenative.data.LibraryItem
+import app.gamenative.service.GOG.SyncProgress
 import app.gamenative.service.SteamService
 import app.gamenative.ui.data.LibraryState
 import app.gamenative.ui.enums.AppFilter
@@ -40,6 +41,7 @@ internal fun LibraryDetailPane(
 
             LibraryListPane(
                 state = emptyState,
+                gogSyncProgress = SyncProgress(),
                 listState = listState,
                 sheetState = sheetState,
                 onFilterChanged = {},
