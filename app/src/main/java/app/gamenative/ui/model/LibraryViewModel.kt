@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import app.gamenative.PrefManager
 import app.gamenative.data.LibraryItem
 import app.gamenative.data.SteamApp
+import app.gamenative.data.GameSource
 import app.gamenative.db.dao.SteamAppDao
 import app.gamenative.service.DownloadService
 import app.gamenative.service.SteamService
@@ -168,7 +169,7 @@ class LibraryViewModel @Inject constructor(
                 .mapIndexed { idx, item ->
                     LibraryItem(
                         index = idx,
-                        appId = "STEAM_${item.id}",
+                        appId = "${GameSource.STEAM.name}_${item.id}",
                         name = item.name,
                         iconHash = item.clientIconHash,
                         isShared = (thisSteamId != 0 && !item.ownerAccountId.contains(thisSteamId)),

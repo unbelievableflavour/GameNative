@@ -57,6 +57,7 @@ import app.gamenative.PrefManager
 import app.gamenative.utils.DeviceUtils
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.distinctUntilChanged
+import app.gamenative.data.GameSource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -264,7 +265,7 @@ private fun Preview_LibraryListPane() {
                     val item = fakeAppInfo(idx)
                     LibraryItem(
                         index = idx,
-                        appId = "STEAM_${item.id}",
+                        appId = "${GameSource.STEAM.name}_${item.id}",
                         name = item.name,
                         iconHash = item.iconHash,
                         isShared = idx % 2 == 0,
