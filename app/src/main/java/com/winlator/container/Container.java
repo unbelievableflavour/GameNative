@@ -40,7 +40,7 @@ public class Container {
     public static final String STEAM_TYPE_LIGHT = "light";
     public static final String STEAM_TYPE_ULTRALIGHT = "ultralight";
     public static final byte MAX_DRIVE_LETTERS = 8;
-    public final int id;
+    public final String id;
     private String name;
     private String screenSize = DEFAULT_SCREEN_SIZE;
     private String envVars = DEFAULT_ENV_VARS;
@@ -140,7 +140,7 @@ public class Container {
         this.executablePath = executablePath != null ? executablePath : "";
     }
 
-    public Container(int id) {
+    public Container(String id) {
         this.id = id;
         this.name = "Container-"+id;
     }

@@ -25,7 +25,7 @@ internal fun LibraryList(
     contentPaddingValues: PaddingValues,
     listState: LazyListState,
     list: List<LibraryItem>,
-    onItemClick: (Int) -> Unit,
+    onItemClick: (String) -> Unit,
 ) {
     if (list.isEmpty()) {
         Box(

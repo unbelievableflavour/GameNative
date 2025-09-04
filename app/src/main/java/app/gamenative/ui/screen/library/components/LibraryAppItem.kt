@@ -1,6 +1,7 @@
 package app.gamenative.ui.screen.library.components
 
 import android.content.res.Configuration
+import app.gamenative.data.GameSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -51,11 +52,11 @@ internal fun AppItem(
     onClick: () -> Unit,
 ) {
     // Determine download and install state
-    val downloadInfo = remember(appInfo.appId) { SteamService.getAppDownloadInfo(appInfo.appId) }
+    val downloadInfo = remember(appInfo.appId) { SteamService.getAppDownloadInfo(appInfo.gameId) }
     val downloadProgress = remember(downloadInfo) { downloadInfo?.getProgress() ?: 0f }
     val isDownloading = downloadInfo != null && downloadProgress < 1f
     val isInstalled = remember(appInfo.appId) {
-        SteamService.isAppInstalled(appInfo.appId)
+        SteamService.isAppInstalled(appInfo.gameId)
     }
 
     var appSizeOnDisk by remember { mutableStateOf("") }
@@ -63,7 +64,7 @@ internal fun AppItem(
     LaunchedEffect(Unit) {
         if (isInstalled) {
             appSizeOnDisk = "..."
-            DownloadService.getSizeOnDiskDisplay(appInfo.appId) {  appSizeOnDisk = it }
+            DownloadService.getSizeOnDiskDisplay(appInfo.gameId) {  appSizeOnDisk = it }
         }
     }
 
@@ -212,7 +213,7 @@ private fun Preview_AppItem() {
                         val item = fakeAppInfo(idx)
                         LibraryItem(
                             index = idx,
-                            appId = item.id,
+                            appId = "${GameSource.STEAM.name}_${item.id}",
                             name = item.name,
                             iconHash = item.iconHash,
                             isShared = idx % 2 == 0,

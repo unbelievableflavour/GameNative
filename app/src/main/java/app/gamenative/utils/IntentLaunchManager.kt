@@ -2,6 +2,7 @@ package app.gamenative.utils
 
 import android.content.Context
 import android.content.Intent
+import app.gamenative.data.GameSource
 import com.winlator.container.Container
 import com.winlator.container.ContainerData
 import com.winlator.core.DXVKHelper
@@ -19,7 +20,7 @@ object IntentLaunchManager {
     private const val MAX_CONFIG_JSON_SIZE = 50000 // 50KB limit to prevent memory exhaustion
 
     data class LaunchRequest(
-        val appId: Int,
+        val appId: String,
         val containerConfig: ContainerData? = null,
     )
 
@@ -31,13 +32,16 @@ object IntentLaunchManager {
             return null
         }
 
-        val appId = intent.getIntExtra(EXTRA_APP_ID, -1)
-        Timber.d("[IntentLaunchManager]: Extracted app_id: $appId from intent extras")
+        val gameId = intent.getIntExtra(EXTRA_APP_ID, -1)
+        Timber.d("[IntentLaunchManager]: Extracted app_id: $gameId from intent extras")
 
-        if (appId <= 0) {
-            Timber.w("[IntentLaunchManager]: Invalid or missing app_id in launch intent: $appId")
+        if (gameId <= 0) {
+            Timber.w("[IntentLaunchManager]: Invalid or missing app_id in launch intent: $gameId")
             return null
         }
+
+        val appId = "${GameSource.STEAM.name}_$gameId"
+        Timber.d("[IntentLaunchManager]: Converted to appId: $appId")
 
         val containerConfigJson = intent.getStringExtra(EXTRA_CONTAINER_CONFIG)
         val containerConfig = if (containerConfigJson != null) {
@@ -54,7 +58,7 @@ object IntentLaunchManager {
         return LaunchRequest(appId, containerConfig)
     }
 
-    fun applyTemporaryConfigOverride(context: Context, appId: Int, configOverride: ContainerData) {
+    fun applyTemporaryConfigOverride(context: Context, appId: String, configOverride: ContainerData) {
         try {
             TemporaryConfigStore.setOverride(appId, configOverride)
 
@@ -82,7 +86,7 @@ object IntentLaunchManager {
         }
     }
 
-    fun getEffectiveContainerConfig(context: Context, appId: Int): ContainerData? {
+    fun getEffectiveContainerConfig(context: Context, appId: String): ContainerData? {
         return try {
             val baseConfig = if (ContainerUtils.hasContainer(context, appId)) {
                 val container = ContainerUtils.getContainer(context, appId)
@@ -104,7 +108,7 @@ object IntentLaunchManager {
         }
     }
 
-    fun clearTemporaryOverride(appId: Int) {
+    fun clearTemporaryOverride(appId: String) {
         TemporaryConfigStore.clearOverride(appId)
         Timber.d("[IntentLaunchManager]: Cleared temporary config override for app $appId")
     }
@@ -114,7 +118,7 @@ object IntentLaunchManager {
         Timber.d("[IntentLaunchManager]: Cleared all temporary config overrides")
     }
 
-    fun restoreOriginalConfiguration(context: Context, appId: Int) {
+    fun restoreOriginalConfiguration(context: Context, appId: String) {
         try {
             val originalConfig = TemporaryConfigStore.getOriginalConfig(appId)
             if (originalConfig != null && ContainerUtils.hasContainer(context, appId)) {
@@ -127,19 +131,19 @@ object IntentLaunchManager {
         }
     }
 
-    fun hasTemporaryOverride(appId: Int): Boolean {
+    fun hasTemporaryOverride(appId: String): Boolean {
         return TemporaryConfigStore.hasOverride(appId)
     }
 
-    fun getTemporaryOverride(appId: Int): ContainerData? {
+    fun getTemporaryOverride(appId: String): ContainerData? {
         return TemporaryConfigStore.getOverride(appId)
     }
 
-    fun getOriginalConfig(appId: Int): ContainerData? {
+    fun getOriginalConfig(appId: String): ContainerData? {
         return TemporaryConfigStore.getOriginalConfig(appId)
     }
 
-    fun setOriginalConfig(appId: Int, config: ContainerData) {
+    fun setOriginalConfig(appId: String, config: ContainerData) {
         TemporaryConfigStore.setOriginalConfig(appId, config)
     }
 
@@ -309,32 +313,32 @@ object IntentLaunchManager {
 }
 
 private object TemporaryConfigStore {
-    private val overrides = mutableMapOf<Int, ContainerData>()
-    private val originalConfigs = mutableMapOf<Int, ContainerData>()
+    private val overrides = mutableMapOf<String, ContainerData>()
+    private val originalConfigs = mutableMapOf<String, ContainerData>()
     private val lock = Any()
 
-    fun setOverride(appId: Int, config: ContainerData) = synchronized(lock) {
+    fun setOverride(appId: String, config: ContainerData) = synchronized(lock) {
         overrides[appId] = config
     }
 
-    fun getOverride(appId: Int): ContainerData? = synchronized(lock) {
+    fun getOverride(appId: String): ContainerData? = synchronized(lock) {
         overrides[appId]
     }
 
-    fun clearOverride(appId: Int) = synchronized(lock) {
+    fun clearOverride(appId: String) = synchronized(lock) {
         overrides.remove(appId)
         originalConfigs.remove(appId)
     }
 
-    fun hasOverride(appId: Int): Boolean = synchronized(lock) {
+    fun hasOverride(appId: String): Boolean = synchronized(lock) {
         overrides.containsKey(appId)
     }
 
-    fun setOriginalConfig(appId: Int, config: ContainerData) = synchronized(lock) {
+    fun setOriginalConfig(appId: String, config: ContainerData) = synchronized(lock) {
         originalConfigs[appId] = config
     }
 
-    fun getOriginalConfig(appId: Int): ContainerData? = synchronized(lock) {
+    fun getOriginalConfig(appId: String): ContainerData? = synchronized(lock) {
         originalConfigs[appId]
     }
 

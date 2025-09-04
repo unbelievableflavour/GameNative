@@ -6,6 +6,7 @@ import android.util.Log;
 
 import app.gamenative.enums.Marker;
 import app.gamenative.service.SteamService;
+import app.gamenative.utils.ContainerUtils;
 import app.gamenative.utils.MarkerUtils;
 
 // import com.winlator.MainActivity;
@@ -226,7 +227,8 @@ public abstract class ImageFsInstaller {
         try {
             for (Container container : containerManager.getContainers()) {
                 try {
-                    String mappedPath = SteamService.Companion.getAppDirPath(container.id);
+                    int gameId = ContainerUtils.INSTANCE.extractGameIdFromContainerId(container.id);
+                    String mappedPath = SteamService.Companion.getAppDirPath(gameId);
                     MarkerUtils.INSTANCE.removeMarker(mappedPath, Marker.STEAM_DLL_REPLACED);
                     MarkerUtils.INSTANCE.removeMarker(mappedPath, Marker.STEAM_DLL_RESTORED);
                     Log.i("ImageFsInstaller", "Cleared markers for container: " + container.getName() + " (ID: " + container.id + ")");

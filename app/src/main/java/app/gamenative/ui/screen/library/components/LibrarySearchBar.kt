@@ -136,7 +136,7 @@ private fun Preview_LibrarySearchBar() {
                         val item = fakeAppInfo(idx)
                         LibraryItem(
                             index = idx,
-                            appId = item.id,
+                            appId = "STEAM_${item.id}",
                             name = item.name,
                             iconHash = item.iconHash,
                         )

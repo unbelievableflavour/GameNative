@@ -69,7 +69,7 @@ internal fun LibraryListPane(
     onPageChange: (Int) -> Unit,
     onIsSearching: (Boolean) -> Unit,
     onLogout: () -> Unit,
-    onNavigate: (Int) -> Unit,
+    onNavigate: (String) -> Unit,
     onSearchQuery: (String) -> Unit,
     onNavigateRoute: (String) -> Unit,
 ) {
@@ -264,7 +264,7 @@ private fun Preview_LibraryListPane() {
                     val item = fakeAppInfo(idx)
                     LibraryItem(
                         index = idx,
-                        appId = item.id,
+                        appId = "STEAM_${item.id}",
                         name = item.name,
                         iconHash = item.iconHash,
                         isShared = idx % 2 == 0,
