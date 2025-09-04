@@ -149,6 +149,7 @@ import android.os.SystemClock
 import kotlinx.coroutines.ensureActive
 import app.gamenative.enums.Marker
 import app.gamenative.utils.MarkerUtils
+import kotlinx.coroutines.Job
 
 @AndroidEntryPoint
 class SteamService : Service(), IChallengeUrlChanged {
@@ -225,6 +226,11 @@ class SteamService : Service(), IChallengeUrlChanged {
     private lateinit var connectivityManager: ConnectivityManager
     private lateinit var networkCallback: ConnectivityManager.NetworkCallback
     private var isWifiConnected: Boolean = true
+
+    // Add these as class properties
+    private var picsGetProductInfoJob: Job? = null
+    private var picsChangesCheckerJob: Job? = null
+    private var friendCheckerJob: Job? = null
 
     companion object {
         const val MAX_PICS_BUFFER = 256
@@ -338,10 +344,10 @@ class SteamService : Service(), IChallengeUrlChanged {
             get() = instance?.steamClient?.steamID
 
         val familyMembers: List<Int>
-            get() = instance!!.familyGroupMembers
+            get() = instance?.familyGroupMembers ?: emptyList()
 
         val isLoginInProgress: Boolean
-            get() = instance!!._loginResult == LoginResult.InProgress
+            get() = instance?._loginResult == LoginResult.InProgress
 
         private const val MAX_PARALLEL_DEPOTS   = 2     // instead of all 38
         private const val CHUNKS_PER_DEPOT      = 16
@@ -1367,6 +1373,11 @@ class SteamService : Service(), IChallengeUrlChanged {
 
             val event = SteamEvent.LoggedOut(username)
             PluviaApp.events.emit(event)
+
+            // Cancel previous continuous jobs or else they will continue to run even after logout
+            instance?.picsGetProductInfoJob?.cancel()
+            instance?.picsChangesCheckerJob?.cancel()
+            instance?.friendCheckerJob?.cancel()
         }
 
         suspend fun getEmoticonList() = withContext(Dispatchers.IO) {
@@ -1810,17 +1821,14 @@ class SteamService : Service(), IChallengeUrlChanged {
                         }
                     }
                 }
-
-                // continuously check for pics changes
-                continuousPICSChangesChecker()
-
-                // request app pics data when needed
-                continuousPICSGetProductInfo()
+                
+                picsChangesCheckerJob = continuousPICSChangesChecker()
+                picsGetProductInfoJob = continuousPICSGetProductInfo()
 
                 if (false) {
                     // No social features are implemented at present
                     // continuously check for game names that friends are playing.
-                    continuousFriendChecker()
+                    friendCheckerJob = continuousFriendChecker()
                 }
 
                 // Tell steam we're online, this allows friends to update.
@@ -2085,7 +2093,7 @@ class SteamService : Service(), IChallengeUrlChanged {
      * Checks every [PICS_CHANGE_CHECK_DELAY] seconds.
      * Results are returned in a [PICSChangesCallback]
      */
-    private fun continuousPICSChangesChecker() = scope.launch {
+    private fun continuousPICSChangesChecker(): Job = scope.launch {
         while (isActive && isLoggedIn) {
             // Initial delay before each check
             delay(60.seconds)
@@ -2093,6 +2101,7 @@ class SteamService : Service(), IChallengeUrlChanged {
             PICSChangesCheck()
         }
     }
+
     private fun PICSChangesCheck() {
         scope.launch {
             ensureActive()
@@ -2176,7 +2185,7 @@ class SteamService : Service(), IChallengeUrlChanged {
     /**
      * Continuously check for friends playing games and query for pics if its a game we don't have in the database.
      */
-    private fun continuousFriendChecker() = scope.launch {
+    private fun continuousFriendChecker(): Job = scope.launch {
         val friendsToUpdate = mutableListOf<SteamFriend>()
         val gameRequest = mutableListOf<PICSRequest>()
         while (isActive && isLoggedIn) {
@@ -2221,8 +2230,9 @@ class SteamService : Service(), IChallengeUrlChanged {
     /**
      * A buffered flow to parse so many PICS requests in a given moment.
      */
-    private fun continuousPICSGetProductInfo() {
-        scope.launch {
+    private fun continuousPICSGetProductInfo(): Job = scope.launch {
+        // Launch both coroutines within this parent job
+        launch {
             appPicsChannel.receiveAsFlow()
                 .filter { it.isNotEmpty() }
                 .buffer(capacity = MAX_PICS_BUFFER, onBufferOverflow = BufferOverflow.SUSPEND)
@@ -2230,6 +2240,7 @@ class SteamService : Service(), IChallengeUrlChanged {
                     Timber.d("Processing ${appRequests.size} app PICS requests")
 
                     ensureActive()
+                    if (!isLoggedIn) return@collect
                     val steamApps = instance?._steamApps ?: return@collect
 
                     val callback = steamApps.picsGetProductInfo(
@@ -2279,7 +2290,7 @@ class SteamService : Service(), IChallengeUrlChanged {
                 }
         }
 
-        scope.launch {
+        launch {
             packagePicsChannel.receiveAsFlow()
                 .filter { it.isNotEmpty() }
                 .buffer(capacity = MAX_PICS_BUFFER, onBufferOverflow = BufferOverflow.SUSPEND)
@@ -2287,7 +2298,9 @@ class SteamService : Service(), IChallengeUrlChanged {
                     Timber.d("Processing ${packageRequests.size} package PICS requests")
 
                     ensureActive()
+                    if (!isLoggedIn) return@collect
                     val steamApps = instance?._steamApps ?: return@collect
+                    
                     val callback = steamApps.picsGetProductInfo(
                         apps = emptyList(),
                         packages = packageRequests,
@@ -2295,6 +2308,7 @@ class SteamService : Service(), IChallengeUrlChanged {
 
                     callback.results.forEach { picsCallback ->
                         // Don't race the queue.
+                        if (!isLoggedIn) return@collect
                         val queue = Collections.synchronizedList(mutableListOf<Int>())
 
                         db.withTransaction {
@@ -2320,7 +2334,7 @@ class SteamService : Service(), IChallengeUrlChanged {
                             }
                         }
 
-                        // TODO: This could be an issue. (Stalling)
+                        // TODO: This could be an issue. (Stalling)                        
                         steamApps.picsGetAccessTokens(
                             appIds = queue,
                             packageIds = emptyList(),
