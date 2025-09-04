@@ -73,7 +73,7 @@ private fun Preview_LibraryDetailPane() {
     PluviaTheme {
         LibraryDetailPane(
             libraryItem = LibraryItem(
-                appId = "STEAM_${Int.MAX_VALUE}",
+                appId = "${GameSource.STEAM.name}_${Int.MAX_VALUE}",
                 name = "Preview Game",
                 iconHash = "",
                 gameSource = GameSource.STEAM

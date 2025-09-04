@@ -33,6 +33,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.gamenative.PrefManager
 import app.gamenative.data.LibraryItem
+import app.gamenative.data.GameSource
 import app.gamenative.service.SteamService
 import app.gamenative.ui.data.LibraryState
 import app.gamenative.ui.enums.AppFilter
@@ -118,13 +119,13 @@ private fun LibraryScreenContent(
             val selectedLibraryItem = selectedAppId?.let { appId ->
                 state.appInfoList.find { it.appId == appId }
             }
-            
+
             LibraryDetailPane(
                 libraryItem = selectedLibraryItem,
                 onBack = { selectedAppId = null },
-                onClickPlay = { 
+                onClickPlay = {
                     selectedLibraryItem?.let { libraryItem ->
-                        onClickPlay(libraryItem.gameId, it) 
+                        onClickPlay(libraryItem.gameId, it)
                     }
                 },
             )
@@ -158,7 +159,7 @@ private fun Preview_LibraryScreenContent() {
                     val item = fakeAppInfo(idx)
                     LibraryItem(
                         index = idx,
-                        appId = "STEAM_${item.id}",
+                        appId = "${GameSource.STEAM.name}_${item.id}",
                         name = item.name,
                         iconHash = item.iconHash,
                     )
