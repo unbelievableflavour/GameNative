@@ -49,7 +49,6 @@ fun ProfileDialog(
     state: EPersonaState,
     onStatusChange: (EPersonaState) -> Unit,
     onNavigateRoute: (String) -> Unit,
-    onLogout: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     if (!openDialog) {
@@ -125,12 +124,6 @@ fun ProfileDialog(
                     Spacer(modifier = Modifier.size(ButtonDefaults.IconSize))
                     Text(text = "Help & Support")
                 }
-
-                FilledTonalButton(modifier = Modifier.fillMaxWidth(), onClick = onLogout) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.Logout, contentDescription = null)
-                    Spacer(modifier = Modifier.size(ButtonDefaults.IconSize))
-                    Text(text = "Log Out")
-                }
             }
         },
         confirmButton = {
@@ -152,7 +145,6 @@ private fun Preview_ProfileDialog() {
             state = EPersonaState.Online,
             onStatusChange = {},
             onNavigateRoute = {},
-            onLogout = {},
             onDismiss = {},
         )
     }
