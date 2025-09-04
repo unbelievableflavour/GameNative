@@ -83,6 +83,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlin.reflect.KFunction2
+import app.gamenative.ui.screen.accounts.AccountManagementScreen
 
 @Composable
 fun PluviaMain(
@@ -655,12 +656,17 @@ fun PluviaMain(
 
         NavHost(
             navController = navController,
-            startDestination = PluviaScreen.LoginUser.route,
+            startDestination = PluviaScreen.Home.route,
         ) {
             /** Login **/
             /** Login **/
             composable(route = PluviaScreen.LoginUser.route) {
                 UserLoginScreen()
+            }
+            
+            /** Account Management **/
+            composable(route = PluviaScreen.AccountManagement.route) {
+                AccountManagementScreen(navController = navController)
             }
             /** Library, Downloads, Friends **/
             /** Library, Downloads, Friends **/
