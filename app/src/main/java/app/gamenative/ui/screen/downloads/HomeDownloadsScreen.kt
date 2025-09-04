@@ -40,14 +40,12 @@ import app.gamenative.ui.theme.PluviaTheme
 @Composable
 fun HomeDownloadsScreen(
     onNavigateRoute: (String) -> Unit,
-    onLogout: () -> Unit,
 ) {
     val onBackPressedDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
 
     DownloadsScreenContent(
         onBack = { onBackPressedDispatcher?.onBackPressed() },
         onNavigateRoute = onNavigateRoute,
-        onLogout = onLogout,
     )
 }
 
@@ -56,7 +54,6 @@ fun HomeDownloadsScreen(
 private fun DownloadsScreenContent(
     onBack: () -> Unit,
     onNavigateRoute: (String) -> Unit,
-    onLogout: () -> Unit,
 ) {
     val snackbarHost = remember { SnackbarHostState() }
     val navigator = rememberListDetailPaneScaffoldNavigator<Long>()
@@ -79,7 +76,6 @@ private fun DownloadsScreenContent(
                     },
                     onBack = onBack,
                     onNavigateRoute = onNavigateRoute,
-                    onLogout = onLogout,
                 )
             }
         },
@@ -103,7 +99,6 @@ private fun DownloadsScreenPane(
     onClick: () -> Unit,
     onBack: () -> Unit,
     onNavigateRoute: (String) -> Unit,
-    onLogout: () -> Unit,
 ) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHost) },
@@ -113,7 +108,6 @@ private fun DownloadsScreenPane(
                 actions = {
                     AccountButton(
                         onNavigateRoute = onNavigateRoute,
-                        onLogout = onLogout,
                     )
                 },
                 navigationIcon = { BackButton(onClick = onBack) },
@@ -198,7 +192,6 @@ private fun Preview_DownloadsScreenContent() {
             DownloadsScreenContent(
                 onBack = {},
                 onNavigateRoute = {},
-                onLogout = {},
             )
         }
     }

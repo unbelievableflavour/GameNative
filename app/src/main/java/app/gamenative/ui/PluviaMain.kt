@@ -629,9 +629,6 @@ fun PluviaMain(
                     onNavigateRoute = {
                         navController.navigate(it)
                     },
-                    onLogout = {
-                        SteamService.logOut()
-                    },
                 )
             }
 

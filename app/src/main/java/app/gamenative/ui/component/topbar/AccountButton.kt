@@ -29,7 +29,6 @@ import timber.log.Timber
 @Composable
 fun AccountButton(
     onNavigateRoute: (String) -> Unit,
-    onLogout: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var persona by remember { mutableStateOf<SteamFriend?>(null) }
@@ -68,10 +67,6 @@ fun AccountButton(
             onNavigateRoute(it)
             showDialog = false
         },
-        onLogout = {
-            onLogout()
-            showDialog = false
-        },
         onDismiss = {
             showDialog = false
         },
@@ -98,7 +93,6 @@ private fun Preview_AccountButton() {
             actions = {
                 AccountButton(
                     onNavigateRoute = {},
-                    onLogout = {},
                 )
             },
         )

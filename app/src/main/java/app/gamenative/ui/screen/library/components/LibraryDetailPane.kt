@@ -44,10 +44,9 @@ internal fun LibraryDetailPane(
                 onPageChange = {},
                 onModalBottomSheet = {},
                 onIsSearching = {},
-                onLogout = {},
-                onNavigate = {},
                 onSearchQuery = {},
                 onNavigateRoute = {},
+                onNavigate = {},
             )
         } else {
             AppScreen(

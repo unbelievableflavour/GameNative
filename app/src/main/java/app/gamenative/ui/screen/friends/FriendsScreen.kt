@@ -247,7 +247,6 @@ private fun FriendsListPane(
                 actions = {
                     AccountButton(
                         onNavigateRoute = onNavigateRoute,
-                        onLogout = onLogout,
                     )
                 },
                 navigationIcon = { BackButton(onClick = onBack) },
