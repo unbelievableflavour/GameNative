@@ -29,7 +29,6 @@ import java.util.concurrent.Future;
 
 public class ContainerManager {
     private final ArrayList<Container> containers = new ArrayList<>();
-    private int maxContainerId = 0;
     private final File homeDir;
     private final Context context;
 
@@ -54,7 +53,6 @@ public class ContainerManager {
 
     private void loadContainers() {
         containers.clear();
-        maxContainerId = 0;
 
         try {
             File[] files = homeDir.listFiles();
@@ -62,12 +60,12 @@ public class ContainerManager {
                 for (File file : files) {
                     if (file.isDirectory()) {
                         if (file.getName().startsWith(ImageFs.USER+"-")) {
-                            Container container = new Container(Integer.parseInt(file.getName().replace(ImageFs.USER+"-", "")));
+                            String containerId = file.getName().replace(ImageFs.USER+"-", "");
+                            Container container = new Container(containerId);
                             container.setRootDir(new File(homeDir, ImageFs.USER+"-"+container.id));
                             JSONObject data = new JSONObject(FileUtils.readString(container.getConfigFile()));
                             container.loadData(data);
                             containers.add(container);
-                            maxContainerId = Math.max(maxContainerId, container.id);
                         }
                     }
                 }
@@ -85,25 +83,17 @@ public class ContainerManager {
         FileUtils.symlink("./"+ImageFs.USER+"-"+container.id, file.getPath());
     }
 
-    public void createContainerAsync(final JSONObject data, Callback<Container> callback) {
-        int id = maxContainerId + 1;
+    public void createContainerAsync(String containerId, final JSONObject data, Callback<Container> callback) {
         final Handler handler = new Handler();
         Executors.newSingleThreadExecutor().execute(() -> {
-            final Container container = createContainer(id, data);
+            final Container container = createContainer(containerId, data);
             handler.post(() -> callback.call(container));
         });
     }
-    public Future<Container> createContainerFuture(final JSONObject data) {
-        int id = maxContainerId + 1;
-        return Executors.newSingleThreadExecutor().submit(() -> createContainer(id, data));
+    public Future<Container> createContainerFuture(String containerId, final JSONObject data) {
+        return Executors.newSingleThreadExecutor().submit(() -> createContainer(containerId, data));
     }
-    public Future<Container> createContainerFuture(int id, final JSONObject data) {
-        return Executors.newSingleThreadExecutor().submit(() -> createContainer(id, data));
-    }
-    public Future<Container> createDefaultContainerFuture(WineInfo wineInfo) {
-        return createDefaultContainerFuture(wineInfo, getNextContainerId());
-    }
-    public Future<Container> createDefaultContainerFuture(WineInfo wineInfo, int containerId) {
+    public Future<Container> createDefaultContainerFuture(WineInfo wineInfo, String containerId) {
         String name = "container_" + containerId;
         Log.d("XServerScreen", "Creating container $name");
         String screenSize = Container.DEFAULT_SCREEN_SIZE;
@@ -166,7 +156,7 @@ public class ContainerManager {
         });
     }
 
-    public Container createContainer(int containerId, JSONObject data) {
+    public Container createContainer(String containerId, JSONObject data) {
         try {
             data.put("id", containerId);
 
@@ -186,7 +176,6 @@ public class ContainerManager {
             }
 
             container.saveData();
-            maxContainerId++;
             containers.add(container);
             return container;
         }
@@ -197,9 +186,11 @@ public class ContainerManager {
     }
 
     private void duplicateContainer(Container srcContainer) {
-        int id = maxContainerId + 1;
+        // Generate a unique ID by appending (1), (2), etc. to the original ID
+        String baseId = srcContainer.id;
+        String newId = generateUniqueContainerId(baseId);
 
-        File dstDir = new File(homeDir, ImageFs.USER+"-"+id);
+        File dstDir = new File(homeDir, ImageFs.USER+"-"+newId);
         if (!dstDir.mkdirs()) return;
 
         if (!FileUtils.copy(srcContainer.getRootDir(), dstDir, (file) -> FileUtils.chmod(file, 0771))) {
@@ -207,7 +198,7 @@ public class ContainerManager {
             return;
         }
 
-        Container dstContainer = new Container(id);
+        Container dstContainer = new Container(newId);
         dstContainer.setRootDir(dstDir);
         dstContainer.setName(srcContainer.getName()+" ("+context.getString(R.string.copy)+")");
         dstContainer.setScreenSize(srcContainer.getScreenSize());
@@ -232,8 +223,24 @@ public class ContainerManager {
         dstContainer.setWineVersion(srcContainer.getWineVersion());
         dstContainer.saveData();
 
-        maxContainerId++;
         containers.add(dstContainer);
+    }
+
+    private String generateUniqueContainerId(String baseId) {
+        // If the base ID doesn't exist, use it as-is
+        if (!hasContainer(baseId)) {
+            return baseId;
+        }
+
+        // Try baseId(1), baseId(2), etc. until we find a unique one
+        int counter = 1;
+        String candidateId;
+        do {
+            candidateId = baseId + "(" + counter + ")";
+            counter++;
+        } while (hasContainer(candidateId));
+
+        return candidateId;
     }
 
     private void removeContainer(Container container) {
@@ -256,16 +263,13 @@ public class ContainerManager {
         return shortcuts;
     }
 
-    public int getNextContainerId() {
-        return maxContainerId + 1;
-    }
-
-    public boolean hasContainer(int id) {
-        for (Container container : containers) if (container.id == id) return true;
+    public boolean hasContainer(String id) {
+        for (Container container : containers) if (container.id.equals(id)) return true;
         return false;
     }
-    public Container getContainerById(int id) {
-        for (Container container : containers) if (container.id == id) return container;
+    
+    public Container getContainerById(String id) {
+        for (Container container : containers) if (container.id.equals(id)) return container;
         return null;
     }
 

@@ -120,7 +120,7 @@ import com.winlator.PrefManager as WinlatorPrefManager
 @OptIn(ExperimentalComposeUiApi::class)
 fun XServerScreen(
     lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current,
-    appId: Int,
+    appId: String,
     bootToContainer: Boolean,
     navigateBack: () -> Unit,
     onExit: () -> Unit,
@@ -187,11 +187,12 @@ fun XServerScreen(
     var keyboard by remember { mutableStateOf<Keyboard?>(null) }
     // var pointerEventListener by remember { mutableStateOf<Callback<MotionEvent>?>(null) }
 
-    val appLaunchInfo = SteamService.getAppInfoOf(appId)?.let { appInfo ->
-        SteamService.getWindowsLaunchInfos(appId).firstOrNull()
+    val gameId = ContainerUtils.extractGameIdFromContainerId(appId)
+    val appLaunchInfo = SteamService.getAppInfoOf(gameId)?.let { appInfo ->
+        SteamService.getWindowsLaunchInfos(gameId).firstOrNull()
     }
 
-    var currentAppInfo = SteamService.getAppInfoOf(appId)
+    var currentAppInfo = SteamService.getAppInfoOf(gameId)
 
     var xServerView: XServerView? by remember {
         val result = mutableStateOf<XServerView?>(null)
@@ -957,7 +958,7 @@ private fun shiftXEnvironmentToContext(
 }
 private fun setupXEnvironment(
     context: Context,
-    appId: Int,
+    appId: String,
     bootToContainer: Boolean,
     xServerState: MutableState<XServerState>,
     // xServerViewModel: XServerViewModel,
@@ -1187,7 +1188,7 @@ private fun setupXEnvironment(
     return environment
 }
 private fun getWineStartCommand(
-    appId: Int,
+    appId: String,
     container: Container,
     bootToContainer: Boolean,
     appLaunchInfo: LaunchInfo?,
@@ -1208,12 +1209,13 @@ private fun getWineStartCommand(
                     "-nobigpicture -nofriendsui -nochatui -nointro -applaunch $appId"
         } else {
             // Original logic for direct game launch
-            val appDirPath = SteamService.getAppDirPath(appId)
+            val gameId = ContainerUtils.extractGameIdFromContainerId(appId)
+            val appDirPath = SteamService.getAppDirPath(gameId)
             var executablePath = ""
             if (container.executablePath.isNotEmpty()) {
                 executablePath = container.executablePath
             } else {
-                executablePath = SteamService.getInstalledExe(appId)
+                executablePath = SteamService.getInstalledExe(gameId)
                 container.executablePath = executablePath
                 container.saveData()
             }
@@ -1239,12 +1241,13 @@ private fun getWineStartCommand(
     return "winhandler.exe $args"
 }
 private fun getSteamlessTarget(
-    appId: Int,
+    appId: String,
     container: Container,
     appLaunchInfo: LaunchInfo?,
 ): String {
-    val appDirPath = SteamService.getAppDirPath(appId)
-    val executablePath = SteamService.getInstalledExe(appId)
+    val gameId = ContainerUtils.extractGameIdFromContainerId(appId)
+    val appDirPath = SteamService.getAppDirPath(gameId)
+    val executablePath = SteamService.getInstalledExe(gameId)
     val drives = container.drives
     val driveIndex = drives.indexOf(appDirPath)
     // greater than 1 since there is the drive character and the colon before the app dir path
@@ -1278,7 +1281,7 @@ private fun unpackExecutableFile(
     context: Context,
     needsUnpacking: Boolean,
     container: Container,
-    appId: Int,
+    appId: String,
     appLaunchInfo: LaunchInfo?,
     onError: ((String) -> Unit)? = null,
 ) {
