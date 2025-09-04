@@ -13,12 +13,15 @@ import com.winlator.core.WineRegistryEditor
 import com.winlator.core.WineThemeManager
 import com.winlator.inputcontrols.ControlsProfile
 import com.winlator.inputcontrols.InputControlsManager
-import java.io.File
+import com.winlator.xenvironment.ImageFs
 import kotlin.Boolean
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
 import com.winlator.winhandler.WinHandler.PreferredInputApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 object ContainerUtils {
     data class GpuInfo(
@@ -651,6 +654,133 @@ object ContainerUtils {
             containerId.startsWith("STEAM_") -> GameSource.STEAM
             // Add other platforms here..
             else -> GameSource.STEAM // default fallback
+        }
+    }
+
+    /**
+     * Migrates legacy numeric container directories to platform-prefixed format.
+     * Legacy: xuser-12345/ -> New: xuser-STEAM_12345/
+     */
+    suspend fun migrateLegacyContainers(
+        context: Context,
+        onProgressUpdate: (currentContainer: String, migratedContainers: Int, totalContainers: Int) -> Unit,
+        onComplete: (migratedCount: Int) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val imageFs = ImageFs.find(context)
+            val homeDir = File(imageFs.rootDir, "home")
+            
+            // Find all legacy numeric container directories
+            val legacyContainers = homeDir.listFiles()?.filter { file ->
+                file.isDirectory() && 
+                file.name != ImageFs.USER && // Skip active symlink
+                file.name.startsWith("${ImageFs.USER}-") && // Must have xuser- prefix
+                file.name.removePrefix("${ImageFs.USER}-").matches(Regex("\\d+")) && // Numeric ID after prefix
+                File(file, ".container").exists() // Has container config
+            } ?: emptyList()
+            
+            val totalContainers = legacyContainers.size
+            var migratedContainers = 0
+            
+            if (totalContainers == 0) {
+                withContext(Dispatchers.Main) {
+                    onComplete(0)
+                }
+                return@withContext
+            }
+            
+            Timber.i("Found $totalContainers legacy containers to migrate")
+            
+            for (legacyDir in legacyContainers) {
+                val legacyId = legacyDir.name.removePrefix("${ImageFs.USER}-") // Remove xuser- prefix
+                val newContainerId = "STEAM_$legacyId"
+                val newDir = File(homeDir, "${ImageFs.USER}-$newContainerId") // WITH xuser- prefix
+                
+                withContext(Dispatchers.Main) {
+                    onProgressUpdate(legacyId, migratedContainers, totalContainers)
+                }
+                
+                try {
+                    // Handle naming conflicts
+                    var finalContainerId = newContainerId
+                    var finalNewDir = newDir
+                    var counter = 1
+                    
+                    while (finalNewDir.exists()) {
+                        finalContainerId = "STEAM_$legacyId($counter)"
+                        finalNewDir = File(homeDir, "${ImageFs.USER}-$finalContainerId") // WITH xuser- prefix
+                        counter++
+                    }
+                    
+                    // Rename directory
+                    if (legacyDir.renameTo(finalNewDir)) {
+                        // Update container config
+                        updateContainerConfig(finalNewDir, finalContainerId)
+                        
+                        // Update active symlink if this was the active container
+                        val activeSymlink = File(homeDir, ImageFs.USER)
+                        if (activeSymlink.exists() && activeSymlink.canonicalPath.endsWith(legacyId)) {
+                            activeSymlink.delete()
+                            FileUtils.symlink("./${ImageFs.USER}-$finalContainerId", activeSymlink.path)
+                            Timber.i("Updated active symlink to point to $finalContainerId")
+                        }
+                        
+                        migratedContainers++
+                        Timber.i("Migrated container $legacyId -> $finalContainerId")
+                    } else {
+                        Timber.e("Failed to rename container directory: $legacyId")
+                    }
+                    
+                } catch (e: Exception) {
+                    Timber.e(e, "Error migrating container $legacyId")
+                }
+            }
+            
+            withContext(Dispatchers.Main) {
+                onComplete(migratedContainers)
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "Error during container migration")
+            withContext(Dispatchers.Main) {
+                onComplete(0)
+            }
+        }
+    }
+
+    /**
+     * Checks if there are any legacy containers that need migration
+     */
+    suspend fun hasLegacyContainers(context: Context): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val imageFs = ImageFs.find(context)
+            val homeDir = File(imageFs.rootDir, "home")
+            
+            val legacyContainers = homeDir.listFiles()?.filter { file ->
+                file.isDirectory() && 
+                file.name != ImageFs.USER && // Skip active symlink
+                file.name.startsWith("${ImageFs.USER}-") && // Must have xuser- prefix
+                file.name.removePrefix("${ImageFs.USER}-").matches(Regex("\\d+")) && // Numeric ID after prefix
+                File(file, ".container").exists() // Has container config
+            } ?: emptyList()
+            
+            return@withContext legacyContainers.isNotEmpty()
+        } catch (e: Exception) {
+            Timber.e(e, "Error checking for legacy containers")
+            return@withContext false
+        }
+    }
+
+    private fun updateContainerConfig(containerDir: File, newContainerId: String) {
+        try {
+            val configFile = File(containerDir, ".container")
+            val configContent = FileUtils.readString(configFile)
+            val data = JSONObject(configContent)
+            data.put("id", newContainerId)
+            FileUtils.writeString(configFile, data.toString())
+            Timber.i("Updated container config ID to $newContainerId")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to update container config for $newContainerId")
         }
     }
 }

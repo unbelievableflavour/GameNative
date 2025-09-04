@@ -4,16 +4,26 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -34,8 +44,9 @@ import app.gamenative.Constants
 import app.gamenative.MainActivity
 import app.gamenative.PluviaApp
 import app.gamenative.PrefManager
-import app.gamenative.data.LibraryItem
+import app.gamenative.R
 import app.gamenative.data.GameSource
+import app.gamenative.data.LibraryItem
 import app.gamenative.enums.AppTheme
 import app.gamenative.enums.LoginResult
 import app.gamenative.enums.PathType
@@ -60,7 +71,6 @@ import app.gamenative.ui.screen.xserver.XServerScreen
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.utils.ContainerUtils
 import app.gamenative.utils.IntentLaunchManager
-import app.gamenative.R
 import com.google.android.play.core.splitcompat.SplitCompat
 import com.winlator.container.ContainerManager
 import com.winlator.xenvironment.ImageFsInstaller
@@ -82,8 +92,62 @@ fun PluviaMain(
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val scope = rememberCoroutineScope()
 
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Container migration state
+    var showMigrationDialog by rememberSaveable { mutableStateOf(false) }
+    var migrationProgress by rememberSaveable { mutableStateOf(0f) }
+    var currentMigrating by rememberSaveable { mutableStateOf("") }
+    var totalToMigrate by rememberSaveable { mutableIntStateOf(0) }
+    var migratedCount by rememberSaveable { mutableIntStateOf(0) }
+
+    // Check for legacy containers on startup
+    LaunchedEffect(Unit) {
+        scope.launch {
+            // Check if there are legacy containers to migrate
+            val hasLegacyContainers = ContainerUtils.hasLegacyContainers(context)
+            if (hasLegacyContainers) {
+                showMigrationDialog = true
+                ContainerUtils.migrateLegacyContainers(
+                    context = context,
+                    onProgressUpdate = { current, migrated, total ->
+                        currentMigrating = current
+                        migratedCount = migrated
+                        totalToMigrate = total
+                        migrationProgress = if (total > 0) migrated.toFloat() / total else 1f
+                    },
+                    onComplete = { count ->
+                        showMigrationDialog = false
+                        Timber.i("Container migration completed: $count containers migrated")
+                    }
+                )
+            }
+        }
+    }
+
+    // Migration Dialog
+    if (showMigrationDialog) {
+        AlertDialog(
+            onDismissRequest = { /* Cannot dismiss during migration */ },
+            title = { Text("Migrating Containers") },
+            text = {
+                Column {
+                    Text("Updating container format for platform compatibility...")
+                    if (currentMigrating.isNotEmpty()) {
+                        Text("Current: $currentMigrating")
+                        Text("Progress: $migratedCount / $totalToMigrate")
+                    }
+                    LinearProgressIndicator(
+                        progress = migrationProgress,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
+            },
+            confirmButton = { /* No buttons during migration */ }
+        )
+    }
 
     var msgDialogState by rememberSaveable(stateSaver = MessageDialogState.Saver) {
         mutableStateOf(MessageDialogState(false))
