@@ -52,7 +52,7 @@ private fun Preview_HomeScreenContent() {
             onChat = {},
             onClickPlay = { _, _ -> },
             onNavigateRoute = {},
-            onClickExit = {}
+            onClickExit = {},
         )
     }
 }

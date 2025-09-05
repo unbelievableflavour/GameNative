@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Settings
@@ -106,13 +105,13 @@ fun ProfileDialog(
 
                 /* Action Buttons */
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 FilledTonalButton(modifier = Modifier.fillMaxWidth(), onClick = { onNavigateRoute(PluviaScreen.AccountManagement.route) }) {
                     Icon(imageVector = Icons.Default.AccountCircle, contentDescription = null)
                     Spacer(modifier = Modifier.size(ButtonDefaults.IconSize))
                     Text(text = "Manage Accounts")
                 }
-                
+
                 FilledTonalButton(modifier = Modifier.fillMaxWidth(), onClick = { onNavigateRoute(PluviaScreen.Settings.route) }) {
                     Icon(imageVector = Icons.Default.Settings, contentDescription = null)
                     Spacer(modifier = Modifier.size(ButtonDefaults.IconSize))

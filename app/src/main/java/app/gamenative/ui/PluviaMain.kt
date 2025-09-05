@@ -34,6 +34,7 @@ import app.gamenative.Constants
 import app.gamenative.MainActivity
 import app.gamenative.PluviaApp
 import app.gamenative.PrefManager
+import app.gamenative.R
 import app.gamenative.enums.AppTheme
 import app.gamenative.enums.LoginResult
 import app.gamenative.enums.PathType
@@ -51,6 +52,7 @@ import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.model.MainViewModel
 import app.gamenative.ui.screen.HomeScreen
 import app.gamenative.ui.screen.PluviaScreen
+import app.gamenative.ui.screen.accounts.AccountManagementScreen
 import app.gamenative.ui.screen.chat.ChatScreen
 import app.gamenative.ui.screen.login.UserLoginScreen
 import app.gamenative.ui.screen.settings.SettingsScreen
@@ -58,20 +60,18 @@ import app.gamenative.ui.screen.xserver.XServerScreen
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.utils.ContainerUtils
 import app.gamenative.utils.IntentLaunchManager
-import app.gamenative.R
 import com.google.android.play.core.splitcompat.SplitCompat
 import com.winlator.container.ContainerManager
 import com.winlator.xenvironment.ImageFsInstaller
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientObjects.ECloudPendingRemoteOperation
 import java.util.Date
 import java.util.EnumSet
+import kotlin.reflect.KFunction2
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import kotlin.reflect.KFunction2
-import app.gamenative.ui.screen.accounts.AccountManagementScreen
 
 @Composable
 fun PluviaMain(
@@ -591,7 +591,7 @@ fun PluviaMain(
             composable(route = PluviaScreen.LoginUser.route) {
                 UserLoginScreen()
             }
-            
+
             /** Account Management **/
             composable(route = PluviaScreen.AccountManagement.route) {
                 AccountManagementScreen(navController = navController)

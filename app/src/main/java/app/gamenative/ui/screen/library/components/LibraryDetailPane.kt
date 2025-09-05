@@ -32,7 +32,7 @@ internal fun LibraryDetailPane(
                 LibraryState(
                     appInfoList = emptyList(),
                     // Use the same default filter as in PrefManager (GAME)
-                    appInfoSortType = EnumSet.of(AppFilter.GAME)
+                    appInfoSortType = EnumSet.of(AppFilter.GAME),
                 )
             }
 
