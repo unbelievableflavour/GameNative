@@ -9,12 +9,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -24,13 +28,16 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,22 +46,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import app.gamenative.PrefManager
 import app.gamenative.data.LibraryItem
+import app.gamenative.service.DownloadService
+import app.gamenative.ui.component.topbar.AccountButton
 import app.gamenative.ui.data.LibraryState
 import app.gamenative.ui.enums.AppFilter
 import app.gamenative.ui.internal.fakeAppInfo
-import app.gamenative.service.DownloadService
 import app.gamenative.ui.theme.PluviaTheme
-import app.gamenative.ui.component.topbar.AccountButton
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
-import app.gamenative.PrefManager
 import app.gamenative.utils.DeviceUtils
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.distinctUntilChanged
 import app.gamenative.data.GameSource
@@ -86,31 +87,32 @@ internal fun LibraryListPane(
             .filterNotNull()
             .distinctUntilChanged()
             .collect { lastVisibleIndex ->
-                if (lastVisibleIndex >= state.appInfoList.lastIndex
-                    && state.appInfoList.size < state.totalAppsInFilter) {
+                if (lastVisibleIndex >= state.appInfoList.lastIndex &&
+                    state.appInfoList.size < state.totalAppsInFilter
+                ) {
                     onPageChange(1)
                 }
             }
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackBarHost) }
+        snackbarHost = { SnackbarHost(snackBarHost) },
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding())
+                .padding(top = paddingValues.calculateTopPadding()),
         ) {
             // Modern Header with gradient
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(16.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
                 ) {
                     Column {
                         Text(
@@ -120,15 +122,15 @@ internal fun LibraryListPane(
                                 brush = Brush.horizontalGradient(
                                     colors = listOf(
                                         MaterialTheme.colorScheme.primary,
-                                        MaterialTheme.colorScheme.tertiary
-                                    )
-                                )
-                            )
+                                        MaterialTheme.colorScheme.tertiary,
+                                    ),
+                                ),
+                            ),
                         )
                         Text(
                             text = "${state.totalAppsInFilter} games • $installedCount installed",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 
@@ -136,7 +138,7 @@ internal fun LibraryListPane(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(horizontal = 30.dp)
+                                .padding(horizontal = 30.dp),
                         ) {
                             LibrarySearchBar(
                                 state = state,
@@ -151,7 +153,7 @@ internal fun LibraryListPane(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                            .padding(8.dp)
+                            .padding(8.dp),
                     ) {
                         AccountButton(
                             onNavigateRoute = onNavigateRoute,
@@ -160,12 +162,12 @@ internal fun LibraryListPane(
                 }
             }
 
-            if (! isViewWide) {
+            if (!isViewWide) {
                 // Search bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
                 ) {
                     LibrarySearchBar(
                         state = state,
@@ -185,14 +187,14 @@ internal fun LibraryListPane(
                     contentPadding = PaddingValues(
                         start = 20.dp,
                         end = 20.dp,
-                        bottom = 72.dp
+                        bottom = 72.dp,
                     ),
                 ) {
                     items(items = state.appInfoList, key = { it.index }) { item ->
                         AppItem(
                             modifier = Modifier.animateItem(),
                             appInfo = item,
-                            onClick = { onNavigate(item.appId) }
+                            onClick = { onNavigate(item.appId) },
                         )
                         if (item.index < state.appInfoList.lastIndex) {
                             HorizontalDivider()
@@ -204,7 +206,7 @@ internal fun LibraryListPane(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(16.dp),
-                                contentAlignment = Alignment.Center
+                                contentAlignment = Alignment.Center,
                             ) {
                                 CircularProgressIndicator()
                             }
@@ -223,7 +225,7 @@ internal fun LibraryListPane(
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(24.dp)
+                            .padding(24.dp),
                     )
                 }
 

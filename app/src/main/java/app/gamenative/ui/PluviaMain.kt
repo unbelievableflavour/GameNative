@@ -64,6 +64,7 @@ import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.model.MainViewModel
 import app.gamenative.ui.screen.HomeScreen
 import app.gamenative.ui.screen.PluviaScreen
+import app.gamenative.ui.screen.accounts.AccountManagementScreen
 import app.gamenative.ui.screen.chat.ChatScreen
 import app.gamenative.ui.screen.login.UserLoginScreen
 import app.gamenative.ui.screen.settings.SettingsScreen
@@ -77,13 +78,12 @@ import com.winlator.xenvironment.ImageFsInstaller
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientObjects.ECloudPendingRemoteOperation
 import java.util.Date
 import java.util.EnumSet
+import kotlin.reflect.KFunction2
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import kotlin.reflect.KFunction2
-import app.gamenative.ui.screen.accounts.AccountManagementScreen
 
 @Composable
 fun PluviaMain(
@@ -658,7 +658,7 @@ fun PluviaMain(
             composable(route = PluviaScreen.LoginUser.route) {
                 UserLoginScreen()
             }
-            
+
             /** Account Management **/
             composable(route = PluviaScreen.AccountManagement.route) {
                 AccountManagementScreen(navController = navController)
