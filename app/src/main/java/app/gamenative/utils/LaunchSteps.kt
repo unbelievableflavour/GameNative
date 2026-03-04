@@ -4,6 +4,7 @@ import android.content.Context
 import app.gamenative.data.GameSource
 import app.gamenative.utils.launchdependencies.GogScriptInterpreterLaunchStep
 import app.gamenative.utils.launchdependencies.LaunchStep
+import app.gamenative.utils.launchdependencies.PhysXLaunchStep
 import app.gamenative.utils.launchdependencies.StepRunner
 import app.gamenative.utils.launchdependencies.VcRedistLaunchStep
 import com.winlator.container.Container
@@ -29,6 +30,7 @@ object LaunchSteps {
 
     private val preSteps: List<LaunchStep> = listOf(
         VcRedistLaunchStep,
+        PhysXLaunchStep,
         GogScriptInterpreterLaunchStep,
     )
 
